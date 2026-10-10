@@ -11,6 +11,7 @@ from PIL import Image
 
 from ioutest.common import read_json, write_json, write_jsonl
 from ioutest.dataset import ScanReader, load_benchmark, metadata, prepare
+from ioutest.image_cache import FrameInputReader, cache_images
 from ioutest.pipeline import evaluate, import_predictions, infer, load_predictions, training_audit
 from ioutest.schema import Detection
 from ioutest.visualize import visualize
@@ -153,3 +154,113 @@ def test_offline_metrics_have_no_model_imports():
         "assert 'opendet3d' not in sys.modules; assert 'vis4d' not in sys.modules"],
         cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_local_cache_infer_and_visualize_without_source(prepared, tmp_path, monkeypatch):
+    root, run = prepared
+    protocol, _, frames, _ = load_benchmark(run)
+    expected = {}
+    for frame in frames:
+        with ScanReader(root, metadata(root)[frame["video_id"]]) as reader:
+            expected[frame["frame_id"]] = reader.model_input(frame)
+    cache = tmp_path / "image-cache"
+    result = cache_images(run, cache, workers=2)
+    assert result["complete"] and result["frames"] == len(frames)
+    monkeypatch.setattr("ioutest.image_cache.default_cache_dir", lambda unused: cache)
+    root.rename(tmp_path / "disconnected-source")
+    # Failing every ZIP open proves local inference and visualization use no ZIP.
+    def fail_zip(*args, **kwargs):
+        raise AssertionError("unexpected ZIP access")
+    monkeypatch.setattr(zipfile, "ZipFile", fail_zip)
+    inputs = FrameInputReader(run, protocol, frames)
+    assert inputs.source_info["kind"] == "local_png"
+    for frame in frames:
+        with inputs.scan(frame["video_id"]) as reader:
+            actual = reader.model_input(frame)
+        original = expected[frame["frame_id"]]
+        np.testing.assert_array_equal(actual.rgb, original.rgb)
+        np.testing.assert_array_equal(actual.intrinsics, original.intrinsics)
+    FakeAdapter.calls = []; FakeAdapter.fail_once = None
+    timing = infer(run, "cached", "ioutest.tests.test_pipeline:FakeAdapter")
+    assert len(FakeAdapter.calls) == len(frames)
+    assert timing["input_source"]["kind"] == "local_png"
+    assert len(visualize(run, "cached", max_frames=3)) == 3
+    assert evaluate(run, "cached")["full"]["summary"]["iou"]["map"] == pytest.approx(1)
+    # Export is resumable and can revalidate already materialized files offline.
+    assert cache_images(run, cache)["frames"] == len(frames)
+
+
+def test_image_cache_selection(prepared, tmp_path, monkeypatch):
+    root, run = prepared
+    protocol, _, frames, _ = load_benchmark(run)
+    cache = tmp_path / "image-cache"
+    monkeypatch.setattr("ioutest.image_cache.default_cache_dir", lambda unused: cache)
+    assert FrameInputReader(run, protocol, frames).source_info["kind"] == "zip"
+    with pytest.raises(ValueError, match="尚未完成"):
+        FrameInputReader(run, protocol, frames, image_cache=cache)
+    cache_images(run, cache)
+    assert FrameInputReader(run, protocol, frames).source_info["kind"] == "local_png"
+    assert FrameInputReader(run, protocol, frames, image_cache=False).source_info["kind"] == "zip"
+
+
+@pytest.mark.parametrize("damage", ["benchmark", "incomplete", "manifest", "duplicate", "missing_id",
+                                    "outside_path", "frozen_hash", "missing_image", "pixels"])
+def test_invalid_image_cache_is_rejected(prepared, tmp_path, damage):
+    from ioutest.common import file_digest
+    _, run = prepared
+    protocol, _, frames, _ = load_benchmark(run)
+    cache = tmp_path / "image-cache"
+    cache_images(run, cache)
+    summary_path = cache / "cache_summary.json"
+    manifest = cache / "images.jsonl"
+    summary = read_json(summary_path)
+    records = [json.loads(line) for line in manifest.read_text().splitlines()]
+    if damage == "benchmark":
+        summary["benchmark_id"] = "other-benchmark"
+    elif damage == "incomplete":
+        summary["complete"] = False
+    elif damage == "manifest":
+        manifest.write_text(manifest.read_text() + " ")
+    elif damage == "missing_image":
+        (cache / records[0]["raw_image"]).unlink()
+    elif damage == "pixels":
+        (cache / records[0]["raw_image"]).write_bytes(png(np.zeros((12, 16, 3), dtype=np.uint8)))
+    else:
+        if damage == "duplicate":
+            records.append(records[0])
+        elif damage == "missing_id":
+            records.pop()
+        elif damage == "outside_path":
+            records[0]["raw_image"] = "../outside.png"
+        elif damage == "frozen_hash":
+            records[0]["raw_rgb_pixels_sha256"] = "wrong"
+        write_jsonl(manifest, records)
+        summary["images_manifest_sha256"] = file_digest(manifest)
+    write_json(summary_path, summary)
+    with pytest.raises(ValueError):
+        inputs = FrameInputReader(run, protocol, frames, image_cache=cache)
+        with inputs.scan(frames[0]["video_id"]) as reader:
+            reader.model_input(frames[0])
+
+
+@pytest.mark.parametrize("rotation_k", [0, 1, 2, 3])
+def test_cached_input_rotates_original_pixels_once(tmp_path, rotation_k):
+    import hashlib
+    from ioutest.common import file_digest
+    cache = tmp_path / "cache"
+    (cache / "raw_images").mkdir(parents=True)
+    rgb = np.arange(4 * 7 * 3, dtype=np.uint8).reshape(4, 7, 3)
+    (cache / "raw_images/frame.png").write_bytes(png(rgb))
+    frame = {"frame_id": "scan:frame", "video_id": "scan", "raw_image_hw": [4, 7],
+             "rgb_pixels_sha256": hashlib.sha256(rgb.tobytes()).hexdigest(),
+             "rotation_k": rotation_k, "intrinsics": [[10., 0., 2.], [0., 10., 3.], [0., 0., 1.]]}
+    write_jsonl(cache / "images.jsonl", [{"frame_id": frame["frame_id"], "raw_image": "raw_images/frame.png",
+                                        "raw_rgb_pixels_sha256": frame["rgb_pixels_sha256"]}])
+    write_json(cache / "cache_summary.json", {"complete": True, "benchmark_id": "test", "frames": 1,
+                                              "images_manifest_sha256": file_digest(cache / "images.jsonl")})
+    inputs = FrameInputReader(tmp_path / "run", {"benchmark_id": "test", "settings": {"dataset_root": "unused"}},
+                              [frame], image_cache=cache)
+    with inputs.scan("scan") as reader:
+        actual = reader.model_input(frame)
+    np.testing.assert_array_equal(actual.rgb, np.rot90(rgb, rotation_k))
+    np.testing.assert_array_equal(actual.intrinsics, frame["intrinsics"])

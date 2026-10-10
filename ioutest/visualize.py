@@ -6,7 +6,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from .common import safe_name
-from .dataset import ScanReader, load_benchmark, metadata
+from .dataset import load_benchmark
+from .image_cache import FrameInputReader
 from .geometry import EDGES, corners, projected_box
 from .schema import CLASSES
 
@@ -33,7 +34,8 @@ def _draw(draw, box, intrinsics, width, height, color, scale, text):
     draw.text((bbox[0] * scale, bbox[1] * scale), text, fill=color)
 
 
-def visualize(run_dir, model_id=None, max_frames=12, score_threshold=.1, show_ignore=False):
+def visualize(run_dir, model_id=None, max_frames=12, score_threshold=.1, show_ignore=False,
+              image_cache=None):
     if max_frames < 1 or not np.isfinite(score_threshold):
         raise ValueError("可视化帧数须为正数，显示分数须为有限数值")
     protocol, _, frames, gt = load_benchmark(run_dir)
@@ -42,7 +44,7 @@ def visualize(run_dir, model_id=None, max_frames=12, score_threshold=.1, show_ig
         from .pipeline import load_predictions
         _, records, _ = load_predictions(run_dir, model_id)
         predictions = {f: r["detections"] for f, r in records.items()}
-    rows = metadata(protocol["settings"]["dataset_root"])
+    inputs = FrameInputReader(run_dir, protocol, frames, image_cache)
     # Choose central frames round-robin across orientations and scans.
     by_scan = {}
     for frame in frames:
@@ -63,7 +65,7 @@ def visualize(run_dir, model_id=None, max_frames=12, score_threshold=.1, show_ig
     output.mkdir(parents=True, exist_ok=True)
     saved = []
     for frame in chosen:
-        with ScanReader(protocol["settings"]["dataset_root"], rows[frame["video_id"]]) as reader:
+        with inputs.scan(frame["video_id"]) as reader:
             sample = reader.model_input(frame)
         h, w = sample.rgb.shape[:2]
         scale = 3

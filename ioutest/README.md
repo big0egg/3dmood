@@ -2,7 +2,7 @@
 
 模块根目录：`/mnt/workspace/3dmood/ioutest`。
 
-模块已提供数据准备、3D-MOOD 推理适配器、三维 IoU AP、米制三维中心距离 AP、断点续跑和离线预测导入。采样清单与 GT 只生成一次，各模型分别保存预测和报告。首版只内置 3D-MOOD；其他模型可按 [模型接口](#模型接口)自行接入。
+模块已提供数据准备、本地图片缓存、3D-MOOD 推理适配器、三维 IoU AP、米制三维中心距离 AP、断点续跑和离线预测导入。采样清单与 GT 只生成一次，各模型分别保存预测和报告。首版只内置 3D-MOOD；其他模型可按 [模型接口](#模型接口)自行接入。
 
 数据和指标协议、类别提示词及训练重叠说明见 [评测协议](PLAN.md)。当前真实模型 AP 尚未生成；不能将测试中的模拟预测结果当作模型效果。
 
@@ -13,15 +13,17 @@ ioutest/
 ├── README.md / PLAN.md
 ├── schema.py                     # ModelInput / Detection / ModelAdapter
 ├── dataset.py                    # ARKitScenes ZIP、采样和逐帧 GT
+├── image_cache.py                # 提取所选图片、本地读取与完整性校验
 ├── geometry.py / metrics.py      # 完整旋转框 IoU 与两类 AP
 ├── pipeline.py                   # 缓存、恢复、导入和报告
 ├── __main__.py                   # python -m ioutest
 ├── adapters/mood3d.py             # 3D-MOOD 适配器
 ├── visualize.py / tests/
+├── cache/                        # 本地图片；已设置 Git 忽略
 └── runs/                         # 本地结果；已设置 Git 忽略
 ```
 
-`prepare`、`evaluate`、`visualize` 和预测导入只需 Python、NumPy、SciPy、Pillow；`infer --adapter 3dmood` 使用现有项目环境。核心评测不会导入 torch、Vis4D 或 `opendet3d`。当前虚拟环境已具备所需依赖，无需重建或升级它。
+`prepare`、`cache-images`、`evaluate`、`visualize` 和预测导入只需 Python、NumPy、SciPy、Pillow；`infer --adapter 3dmood` 使用现有项目环境。核心评测不会导入 torch、Vis4D 或 `opendet3d`。当前虚拟环境已具备所需依赖，无需重建或升级它。
 
 所有以下命令在项目根目录执行：
 
@@ -58,6 +60,9 @@ python -m ioutest prepare \
   --max-scans 10 \
   --frames-per-scan 10
 
+python -m ioutest cache-images \
+  --run-dir ioutest/runs/arkit-smoke-v1
+
 python -m ioutest visualize \
   --run-dir ioutest/runs/arkit-smoke-v1 \
   --max-frames 10
@@ -88,11 +93,9 @@ python -m ioutest visualize \
 
 ### 4. 正式评测全部验证扫描
 
-```bash
-python -m ioutest prepare \
-  --run-dir ioutest/runs/arkit-validation-v1 \
-  --frames-per-scan 20
+**当前实例已有完整的 10,980 帧清单、GT 和本地图片，直接执行以下命令，无需重新 prepare 或提取图片。** `infer` 自动使用 `ioutest/cache/arkit-validation-v1/`：
 
+```bash
 python -m ioutest infer \
   --run-dir ioutest/runs/arkit-validation-v1 \
   --model-id 3dmood-swin-b
@@ -104,6 +107,19 @@ python -m ioutest evaluate \
 
 数据准备可断点续跑；已有相同协议的完整清单会校验后复用。改变场景、切帧、可见性或实现版本时，使用新的 `--run-dir`。改变模型、权重或适配器配置时，使用新的 `--model-id`。
 
+仅在新部署、尚无清单和图片的情况下，先执行以下准备命令，再执行上面的推理与评分：
+
+```bash
+python -m ioutest prepare \
+  --run-dir ioutest/runs/arkit-validation-v1 \
+  --frames-per-scan 20
+
+python -m ioutest cache-images \
+  --run-dir ioutest/runs/arkit-validation-v1
+```
+
+已有完整清单不因本次读取优化而重建。`prepare` 将代码版本纳入签名；现有冻结数据继续直接用于 `infer` / `evaluate`，需要重新准备时选择新的 `--run-dir`。
+
 也可用 `run` 合并三步，例如：
 
 ```bash
@@ -114,7 +130,38 @@ python -m ioutest run \
   --model-id 3dmood-swin-b
 ```
 
-原始 `/mnt/data/openBenchmark/ARKitScenes` 只读，直接读取 ZIP 中所选帧，不整体解压验证集，也不修改原始文件。
+原始 `/mnt/data/openBenchmark/ARKitScenes` 只读，准备 GT 和首次提取图片时读取 ZIP；缓存就绪后，推理和可视化直接读取本地 PNG，不再打开远程 ZIP。不整体解压验证集，也不修改原始文件。
+
+## 本地图片缓存与 GitHub 提交
+
+当前正式清单的 10,980 帧已保存于 `/mnt/workspace/3dmood/ioutest/cache/arkit-validation-v1/`，原图与转正图片合计约 1.39 GiB：
+
+```text
+cache/arkit-validation-v1/
+├── raw_images/<video_id>/*.png    # 原始方向，用于模块推理
+├── images/<video_id>/*.png        # 转正后的 RGB，可供其他项目使用
+├── images.jsonl                  # 帧编号、两种路径、转正后的内参和像素摘要
+└── cache_summary.json            # benchmark_id、完整性、清单摘要与体积
+```
+
+`infer`、`run` 和 `visualize` 默认检测 `ioutest/cache/<run-dir 名称>/`。存在缓存时，先检查 benchmark ID、清单摘要、全部帧编号和原图文件是否完整，再逐帧校验原图像素与冻结清单一致；读取 `raw_images` 后只转正一次，使用冻结清单的对应内参。`timing.json` 的 `input_source.kind` 为 `local_png` 时表示使用了本地缓存。
+
+没有默认缓存目录时仍可读取原始 ZIP；已有但损坏或不完整的缓存会停止执行，不会悄悄改用其他数据。可以重新运行 `cache-images` 补齐中断时未完成的图片；已存在的图片会校验后复用。若需要自定义路径或明确使用 ZIP：
+
+```bash
+python -m ioutest infer \
+  --run-dir ioutest/runs/arkit-validation-v1 \
+  --image-cache /mnt/workspace/3dmood/ioutest/cache/arkit-validation-v1
+
+python -m ioutest visualize \
+  --run-dir ioutest/runs/arkit-validation-v1 \
+  --no-image-cache \
+  --max-frames 3
+```
+
+向其他模型提供 `images/` 时，使用 `images.jsonl` 中的配套内参，不要再按 `rotation_k` 转正；`rotation_k` 描述的是从 `raw_images/` 到 `images/` 的变换。
+
+`ioutest/.gitignore` 忽略整个 `/cache/` 和 `/runs/`，包括数据图片、缓存清单、预测和可视化文件。它们保留在机器上，普通 `git add` 不会提交到 GitHub。仓库自带的 `assets/` 示例图不受影响。新克隆仓库需自行准备数据、生成评测清单，再运行 `cache-images`；不要使用 `git add -f` 强制加入缓存。
 
 ## 指标与结果
 
@@ -235,8 +282,8 @@ python -B -m pytest -q --disable-warnings -p no:cacheprovider ioutest/tests
 
 真实数据的 Up/Left/Down 三个扫描已准备 15 帧，生成并检查了 GT 投影图：`runs/geometry-smoke-v1/visualizations/groundtruth/`。该清单用于几何检查，正式评测另用 `arkit-validation-v1`。
 
-正式清单 `runs/arkit-validation-v1/` 已完成准备并通过全部摘要校验和重复执行验证：549 个扫描、183 个 visit、10,980 帧、19,147 个有效逐帧 GT，覆盖全部 17 类；3,166 帧没有有效 GT，仍保留用于误检评测。采样前无文件/轨迹配对问题，无排除扫描。目录约 156 MB，原始 ZIP 保持不变。详细计数见该目录的 `preparation_summary.json`。正式清单已就绪，可以直接执行第 4 步中的 `infer` 与 `evaluate`；再次执行 `prepare` 会验证并复用它。
+正式清单 `runs/arkit-validation-v1/` 已完成准备并通过全部摘要校验：549 个扫描、183 个 visit、10,980 帧、19,147 个有效逐帧 GT，覆盖全部 17 类；3,166 帧没有有效 GT，仍保留用于误检评测。采样前无文件/轨迹配对问题，无排除扫描。目录约 156 MB，原始 ZIP 保持不变。详细计数见该目录的 `preparation_summary.json`。正式清单与本地图片已就绪，可以直接执行第 4 步中的 `infer` 与 `evaluate`，无需重跑 `prepare`。
 
-20 项测试已通过；完整旋转 CPU IoU 与现有 Vis4D 算子的随机框对照通过。3D-MOOD 本地模型/权重加载和一个真实 ARKitScenes 帧的 CPU 推理也已验证，输出 28 个符合统一接口的三维预测，记录在 `runs/geometry-smoke-v1/cpu_adapter_check.json`。这用于验证适配器，并非完整评测。
+35 项测试已通过，覆盖完整旋转 CPU IoU 与现有 Vis4D 算子的随机框对照、本地缓存/ZIP 输入一致性、四种旋转、源数据不可访问时的推理与可视化、缓存损坏和缺失检测。真实正式缓存的全部 10,980 帧已逐帧校验原图摘要、转正结果和内参，检查期间禁止 ZIP 访问；15 帧几何清单的缓存重建命令与 3 帧可视化也已通过。3D-MOOD 本地模型/权重加载和一个真实 ARKitScenes 帧的 CPU 推理此前已验证，输出 28 个符合统一接口的三维预测，记录在 `runs/geometry-smoke-v1/cpu_adapter_check.json`。这些验证不是完整模型评测。
 
 当前工具进程无法访问 PPU；PPU 批量推理及正式 AP 还需在 DSW 原生 Terminal 执行上面的 `doctor → infer → evaluate`。模块没有用模拟预测填写真实模型报告。

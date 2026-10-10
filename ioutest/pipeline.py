@@ -9,7 +9,8 @@ from pathlib import Path
 from .adapters import create_adapter
 from .common import (atomic_text, digest, file_digest, read_json, read_jsonl,
                      safe_name, utc_now, write_json)
-from .dataset import ScanReader, load_benchmark, metadata
+from .dataset import load_benchmark, metadata
+from .image_cache import FrameInputReader
 from .metrics import evaluate_ap
 from .schema import SCHEMA_VERSION, validate_box
 
@@ -62,8 +63,9 @@ def _check_record(record, allowed):
 
 
 def infer(run_dir, model_id="3dmood-swin-b", adapter_name="3dmood", options=None,
-          training_annotations=None):
+          training_annotations=None, image_cache=None):
     protocol, audit, frames, _ = load_benchmark(run_dir)
+    inputs = FrameInputReader(run_dir, protocol, frames, image_cache)
     path = model_dir(run_dir, model_id)
     by_scan = defaultdict(list)
     for frame in frames:
@@ -84,8 +86,6 @@ def infer(run_dir, model_id="3dmood-swin-b", adapter_name="3dmood", options=None
             raise ValueError("model-id 已有不同模型、权重、协议或适配器版本，请使用新 model-id")
         if not info_path.exists():
             write_json(info_path, info)
-        root = protocol["settings"]["dataset_root"]
-        rows = metadata(root)
         complete = 0
         for scan, scan_frames in by_scan.items():
             shard = path / "predictions" / (scan + ".json")
@@ -100,7 +100,7 @@ def infer(run_dir, model_id="3dmood-swin-b", adapter_name="3dmood", options=None
                 records[record["frame_id"]] = record
             if not set(records) <= {f["frame_id"] for f in scan_frames}:
                 raise ValueError("预测分片混入其他扫描的帧")
-            with ScanReader(root, rows[scan]) as reader:
+            with inputs.scan(scan) as reader:
                 for frame in scan_frames:
                     if frame["frame_id"] not in records:
                         begin = time.perf_counter()
@@ -122,7 +122,8 @@ def infer(run_dir, model_id="3dmood-swin-b", adapter_name="3dmood", options=None
         durations = [r.get("predict_seconds", 0.) for r in records.values()]
         steady = durations[1:] or durations
         import numpy as np
-        timing = {"complete": True, "frame_count": len(records), "model_load_seconds_this_invocation": load_seconds,
+        timing = {"complete": True, "frame_count": len(records), "input_source": inputs.source_info,
+                  "model_load_seconds_this_invocation": load_seconds,
                   "mean_predict_seconds_excluding_first": float(np.mean(steady)),
                   "estimated_10980_frame_predict_hours": float(np.mean(steady) * 10980 / 3600),
                   "note": "仅预测时间估计；不含准备、模型加载、写盘和指标计算", "utc": utc_now()}

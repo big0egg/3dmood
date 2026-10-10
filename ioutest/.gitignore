@@ -1,4 +1,6 @@
+# Local predictions, reports and visualization images are never committed.
 /runs/
+# Selected dataset PNGs (raw_images and images), manifests and model caches.
 /cache/
 __pycache__/
 *.pyc

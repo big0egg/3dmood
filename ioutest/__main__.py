@@ -1,4 +1,4 @@
-"""CLI: python -m ioutest {doctor,prepare,infer,evaluate,run,visualize,import-predictions}."""
+"""CLI for benchmark preparation, local images, inference and offline scoring."""
 
 import argparse
 import json
@@ -22,6 +22,14 @@ def _prepare_arguments(parser):
                         help="GT 框内观测深度点数必须严格大于该值")
 
 
+def _image_cache_arguments(parser):
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--image-cache", type=Path,
+                       help="指定本地图片缓存；默认自动检测 ioutest/cache/<run-dir 名称>")
+    group.add_argument("--no-image-cache", dest="image_cache", action="store_const", const=False,
+                       help="跳过本地图片缓存，直接读取原始 ZIP")
+
+
 def _infer_arguments(parser, run_dir=True):
     if run_dir:
         parser.add_argument("--run-dir", type=Path, default=DEFAULT_RUN)
@@ -34,6 +42,7 @@ def _infer_arguments(parser, run_dir=True):
     parser.add_argument("--score-threshold", type=float, default=None)
     parser.add_argument("--training-annotations", type=Path, nargs="+",
                         help="可选的模型训练 Omni3D/COCO 标注，用于扫描/visit 重叠审计")
+    _image_cache_arguments(parser)
 
 
 def _metric_arguments(parser):
@@ -104,6 +113,10 @@ def main(argv=None):
     p = commands.add_parser("doctor", help="检查本地模型环境、离线缓存与 CPU IoU")
     p.add_argument("--device", default="cuda"); p.add_argument("--checkpoint", type=Path)
     _prepare_arguments(commands.add_parser("prepare", help="读取 ZIP，冻结采样清单和逐帧 GT，可断点续跑"))
+    p = commands.add_parser("cache-images", help="将冻结清单的图片提取到本地，可断点续跑")
+    p.add_argument("--run-dir", type=Path, default=DEFAULT_RUN)
+    p.add_argument("--image-cache", type=Path, help="默认 ioutest/cache/<run-dir 名称>")
+    p.add_argument("--workers", type=int, default=4)
     _infer_arguments(commands.add_parser("infer", help="一次加载模型，逐帧推理，按帧断点续跑"))
     p = commands.add_parser("evaluate", help="从完整预测缓存计算两类 AP，无需 GPU 或模型")
     p.add_argument("--run-dir", type=Path, default=DEFAULT_RUN)
@@ -116,6 +129,7 @@ def main(argv=None):
     p.add_argument("--max-frames", type=int, default=12)
     p.add_argument("--score-threshold", type=float, default=.1, help="仅影响可视化，不影响 AP")
     p.add_argument("--show-ignore", action="store_true")
+    _image_cache_arguments(p)
     p = commands.add_parser("import-predictions", help="校验并导入通用 JSONL 预测，不加载模型")
     p.add_argument("--run-dir", type=Path, default=DEFAULT_RUN)
     p.add_argument("--model-id", required=True); p.add_argument("--path", type=Path, required=True)
@@ -127,7 +141,10 @@ def main(argv=None):
         elif args.command == "visualize":
             from .visualize import visualize
             result = {"images": visualize(args.run_dir, args.model_id, args.max_frames,
-                                          args.score_threshold, args.show_ignore)}
+                                          args.score_threshold, args.show_ignore, args.image_cache)}
+        elif args.command == "cache-images":
+            from .image_cache import cache_images
+            result = cache_images(args.run_dir, args.image_cache, args.workers)
         elif args.command == "import-predictions":
             from .pipeline import import_predictions
             result = import_predictions(args.run_dir, args.model_id, args.path, args.benchmark_id)
@@ -149,7 +166,8 @@ def main(argv=None):
                               "frames": audit["frame_count"], "excluded_scans": audit["excluded_scans"]}
             if args.command in ("infer", "run"):
                 from .pipeline import infer
-                result = infer(args.run_dir, args.model_id, args.adapter, _options(args), args.training_annotations)
+                result = infer(args.run_dir, args.model_id, args.adapter, _options(args),
+                               args.training_annotations, args.image_cache)
             if args.command in ("evaluate", "run"):
                 from .pipeline import evaluate
                 report = evaluate(args.run_dir, args.model_id, args.iou_thresholds, args.distance_thresholds,

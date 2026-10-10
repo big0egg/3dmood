@@ -381,7 +381,7 @@ python -m vis4d.data.io.to_hdf5 -p hypersim_depth # 仅自行生成深度时需�
 
 本实例已有原始数据：`/mnt/data/openBenchmark/ARKitScenes`，包含 4,498 个训练扫描和 549 个验证扫描的官方 3DOD ZIP。验证集对应 183 个不同 `visit_id`，具有场景级三维框、RGB、深度、逐帧内参及相机轨迹。
 
-针对“三维 IoU AP、三维中心距离 AP”的需求，独立模块已实现于 [`ioutest`](ioutest/README.md)，提供多场景切帧、逐帧 GT、3D-MOOD 推理适配器、两类 AP、断点续跑及通用预测导入。全部 549 个验证扫描的 10,980 帧清单已准备完成。运行命令与预留的模型接口见 [模块使用说明](ioutest/README.md)，具体协议见 [评测协议](ioutest/PLAN.md)。20 项测试及真实单帧 CPU 推理已通过；PPU 批量推理及正式 AP 尚未执行。
+针对“三维 IoU AP、三维中心距离 AP”的需求，独立模块已实现于 [`ioutest`](ioutest/README.md)，提供多场景切帧、逐帧 GT、本地图片缓存、3D-MOOD 推理适配器、两类 AP、断点续跑及通用预测导入。全部 549 个验证扫描的 10,980 帧清单和本地图片已准备完成；推理与可视化默认使用 `ioutest/cache/arkit-validation-v1/` 中的原图，校验后转正。该缓存及运行结果已设置 Git 忽略，图片不提交到 GitHub。运行命令与预留的模型接口见 [模块使用说明](ioutest/README.md)，具体协议见 [评测协议](ioutest/PLAN.md)。单元测试及真实单帧 CPU 推理已通过；PPU 批量推理及正式 AP 尚未执行。
 
 该流程使用原始 3DOD 数据和自定义单帧评测协议。下面的现有 Omni3D 评测命令需要整理后的 Omni3D 数据，不能直接将原始 ZIP 根目录代入运行。
 
