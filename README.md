@@ -36,11 +36,11 @@
 
 上游项目声明支持 Python 3.11+、PyTorch 2.4.0+。下面统一采用当前实例的 Python 3.12 与 PPU PyTorch 2.9 环境。
 
-本文按当前阿里云 **PAI-DSW PPU 实例**组织操作步骤，所有命令在 DSW 原生 Terminal 中执行。当前实例已完成自带 Swin-B Demo 的推理和可视化；数据集评测及训练需要另外准备数据。
+本文按当前阿里云 **PAI-DSW PPU 实例**组织操作步骤，所有命令在 DSW 原生 Terminal 中执行。当前实例已完成自带 Swin-B Demo 的推理和可视化；ARKitScenes 原始数据已就绪，多场景评测的适配方案见下文。
 
 | 项目 | 配置 |
 | --- | --- |
-| 项目目录 | `/mnt/workspace/3D-MOOD` |
+| 项目目录 | `/mnt/workspace/3dmood` |
 | 系统 / Python | Ubuntu 24.04，Python 3.12 |
 | PPU SDK / CUDA 兼容版本 | SDK 2.1，CUDA 13.0 |
 | PyTorch / torchvision | PPU 源中的 2.9.0 / 0.24.0 |
@@ -52,12 +52,16 @@ PPU 核心包使用镜像对应的阿里云 PPU 包源，模型下载沿用镜�
 
 操作顺序：**准备环境 → 安装固定版本依赖 → 编译算子 → 下载模型 → 运行 Demo → 准备数据集与评测/训练。**
 
-已有 `/mnt/workspace/venvs/3d-mood-ppu` 环境可直接激活并进入“模型准备”：
+已有 `/mnt/workspace/venvs/3d-mood-ppu` 环境可直接激活。项目移动到新目录后，先更新可编辑安装的路径，再进入“模型准备”：
 
 ```bash
 source /mnt/workspace/venvs/3d-mood-ppu/bin/activate
-cd /mnt/workspace/3D-MOOD
+cd /mnt/workspace/3dmood
+python -m pip install -e . --no-deps --no-build-isolation
+(cd /tmp && python -B -c "import opendet3d; print(opendet3d.__file__)")
 ```
+
+验证应输出 `/mnt/workspace/3dmood/opendet3d/__init__.py`。项目包名仍为 `opendet3d`，源码中的导入语句保持原样；模型缓存和虚拟环境仍使用原来的目录。Demo 与数据配置使用相对路径，运行前先进入项目根目录。
 
 ## 首次配置环境
 
@@ -70,7 +74,7 @@ cd /mnt/workspace/3D-MOOD
 先确认基础镜像的 Python、PPU SDK 与上表一致，并能访问加速卡：
 
 ```bash
-cd /mnt/workspace/3D-MOOD
+cd /mnt/workspace/3dmood
 python --version
 cat /usr/local/PPU_SDK/release.yaml
 nvcc --version
@@ -93,7 +97,7 @@ PY
 ```bash
 python -m venv /mnt/workspace/venvs/3d-mood-ppu-clean
 source /mnt/workspace/venvs/3d-mood-ppu-clean/bin/activate
-cd /mnt/workspace/3D-MOOD
+cd /mnt/workspace/3dmood
 
 export MOOD_PPU_INDEX=https://aiext-pypi.mirrors.aliyuncs.com/pg1-pip/ubuntu_cu130/simple/
 export MOOD_CONSTRAINTS="$VIRTUAL_ENV/3d-mood-constraints.txt"
@@ -192,7 +196,7 @@ Demo 使用 **Swin-B** 检测模型与 `bert-base-uncased`。先下载两者，�
 以下设置在当前激活的环境中执行，并在下载与运行时保持一致：
 
 ```bash
-cd /mnt/workspace/3D-MOOD
+cd /mnt/workspace/3dmood
 export HF_HOME=/mnt/workspace/.cache/3d-mood/huggingface
 export TORCH_HOME=/mnt/workspace/.cache/3d-mood/torch
 export MPLCONFIGDIR=/mnt/workspace/.cache/3d-mood/matplotlib
@@ -288,7 +292,7 @@ python scripts/demo.py && stat -c '%y %s %n' assets/demo/output.png
 
 ```bash
 source /mnt/workspace/venvs/3d-mood-ppu/bin/activate
-cd /mnt/workspace/3D-MOOD
+cd /mnt/workspace/3dmood
 export HF_HOME=/mnt/workspace/.cache/3d-mood/huggingface
 export TORCH_HOME=/mnt/workspace/.cache/3d-mood/torch
 export MPLCONFIGDIR=/mnt/workspace/.cache/3d-mood/matplotlib
@@ -372,6 +376,14 @@ python -m vis4d.data.io.to_hdf5 -p hypersim_depth # 仅自行生成深度时需�
 转换完成后，检查各个 `.hdf5` 文件及标注路径与配置一致。
 
 本文统一使用配置默认的 HDF5 数据后端。
+
+## ARKitScenes 多场景切帧评测
+
+本实例已有原始数据：`/mnt/data/openBenchmark/ARKitScenes`，包含 4,498 个训练扫描和 549 个验证扫描的官方 3DOD ZIP。验证集对应 183 个不同 `visit_id`，具有场景级三维框、RGB、深度、逐帧内参及相机轨迹。
+
+针对“三维 IoU AP、三维中心距离 AP”的需求，独立模块已实现于 [`ioutest`](ioutest/README.md)，提供多场景切帧、逐帧 GT、3D-MOOD 推理适配器、两类 AP、断点续跑及通用预测导入。全部 549 个验证扫描的 10,980 帧清单已准备完成。运行命令与预留的模型接口见 [模块使用说明](ioutest/README.md)，具体协议见 [评测协议](ioutest/PLAN.md)。20 项测试及真实单帧 CPU 推理已通过；PPU 批量推理及正式 AP 尚未执行。
+
+该流程使用原始 3DOD 数据和自定义单帧评测协议。下面的现有 Omni3D 评测命令需要整理后的 Omni3D 数据，不能直接将原始 ZIP 根目录代入运行。
 
 ## 数据集评测与训练
 
