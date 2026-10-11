@@ -107,6 +107,15 @@ def doctor(device="cuda", checkpoint=None):
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "benchmark":
+        from .benchmark import main as benchmark_main
+        try:
+            benchmark_main(argv[1:])
+            return 0
+        except Exception as exc:
+            print(f"ioutest benchmark: {exc}", file=sys.stderr)
+            return 1
     parser = argparse.ArgumentParser(description="ARKitScenes 单帧三维检测评测，数据/模型/指标独立")
     parser.add_argument("--debug", action="store_true", help="错误时显示完整 traceback")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -116,6 +125,11 @@ def main(argv=None):
     p = commands.add_parser("cache-images", help="将冻结清单的图片提取到本地，可断点续跑")
     p.add_argument("--run-dir", type=Path, default=DEFAULT_RUN)
     p.add_argument("--image-cache", type=Path, help="默认 ioutest/cache/<run-dir 名称>")
+    p.add_argument("--workers", type=int, default=4)
+    commands.add_parser("benchmark", help="三项目四输入组，200 帧试评测后全量，详情 benchmark --help")
+    p = commands.add_parser("cache-depth", help="缓存同一冻结帧清单的 ARKit 米制深度源图片")
+    p.add_argument("--run-dir", type=Path, default=DEFAULT_RUN)
+    p.add_argument("--image-cache", type=Path)
     p.add_argument("--workers", type=int, default=4)
     _infer_arguments(commands.add_parser("infer", help="一次加载模型，逐帧推理，按帧断点续跑"))
     p = commands.add_parser("evaluate", help="从完整预测缓存计算两类 AP，无需 GPU 或模型")
@@ -145,6 +159,9 @@ def main(argv=None):
         elif args.command == "cache-images":
             from .image_cache import cache_images
             result = cache_images(args.run_dir, args.image_cache, args.workers)
+        elif args.command == "cache-depth":
+            from .depth_cache import cache_depth
+            result = cache_depth(args.run_dir, args.image_cache, args.workers)
         elif args.command == "import-predictions":
             from .pipeline import import_predictions
             result = import_predictions(args.run_dir, args.model_id, args.path, args.benchmark_id)

@@ -381,7 +381,17 @@ python -m vis4d.data.io.to_hdf5 -p hypersim_depth # 仅自行生成深度时需�
 
 本实例已有原始数据：`/mnt/data/openBenchmark/ARKitScenes`，包含 4,498 个训练扫描和 549 个验证扫描的官方 3DOD ZIP。验证集对应 183 个不同 `visit_id`，具有场景级三维框、RGB、深度、逐帧内参及相机轨迹。
 
-针对“三维 IoU AP、三维中心距离 AP”的需求，独立模块已实现于 [`ioutest`](ioutest/README.md)，提供多场景切帧、逐帧 GT、本地图片缓存、3D-MOOD 推理适配器、两类 AP、断点续跑及通用预测导入。全部 549 个验证扫描的 10,980 帧清单和本地图片已准备完成；推理与可视化默认使用 `ioutest/cache/arkit-validation-v1/` 中的原图，校验后转正。该缓存及运行结果已设置 Git 忽略，图片不提交到 GitHub。运行命令与预留的模型接口见 [模块使用说明](ioutest/README.md)，具体协议见 [评测协议](ioutest/PLAN.md)。单元测试及真实单帧 CPU 推理已通过；PPU 批量推理及正式 AP 尚未执行。
+针对“三维 IoU AP、三维中心距离 AP”的需求，独立模块 [`ioutest`](ioutest/README.md) 已接入 **3D-MOOD、WildDet3D、CuTR RGB、CuTR RGB-D**，同一实例通过三套已有虚拟环境顺序推理，无需切换镜像。549 个验证扫描、183 个 visit、10,980 帧的冻结清单、GT、本地 RGB 与同帧 ARKit 深度已经就绪。模块提供类别无关几何 AP、两模型 17 类语义 AP、RGB-D 独立对照、断点续跑与中文报告；图片、深度和运行缓存均被 Git 忽略。当前工具进程无法访问 PPU，正式 AP 尚未执行。
+
+在 DSW 原生 Terminal 中直接启动 200 帧试评测，再接续 10,980 帧全量：
+
+```bash
+cd /mnt/workspace/3dmood
+/mnt/workspace/venvs/3d-mood-ppu/bin/python -B -m ioutest benchmark \
+  --report-root "$HOME/report/arkitscenes-three-models-v1"
+```
+
+报告分别位于 `~/report/arkitscenes-three-models-v1/pilot/report.md` 和 `full/report.md`。添加 `--phase pilot` 可仅做试评测；随后以同一目录执行 `--phase full`，或者中断后重复原命令，都会复用完成帧。指标、模型输入和可选重力实验见 [模块使用说明](ioutest/README.md)，采样与 GT 协议见 [评测协议](ioutest/PLAN.md)。
 
 该流程使用原始 3DOD 数据和自定义单帧评测协议。下面的现有 Omni3D 评测命令需要整理后的 Omni3D 数据，不能直接将原始 ZIP 根目录代入运行。
 

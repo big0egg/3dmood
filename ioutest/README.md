@@ -2,9 +2,86 @@
 
 模块根目录：`/mnt/workspace/3dmood/ioutest`。
 
-模块已提供数据准备、本地图片缓存、3D-MOOD 推理适配器、三维 IoU AP、米制三维中心距离 AP、断点续跑和离线预测导入。采样清单与 GT 只生成一次，各模型分别保存预测和报告。首版只内置 3D-MOOD；其他模型可按 [模型接口](#模型接口)自行接入。
+模块提供冻结数据清单、本地 RGB/深度缓存、3D-MOOD、WildDet3D、CuTR RGB/RGB-D 适配器、两类 AP、断点续跑和中文对比报告。采样清单与 GT 只生成一次，各模型在各自虚拟环境中顺序运行；不需要切换阿里云镜像。
 
 数据和指标协议、类别提示词及训练重叠说明见 [评测协议](PLAN.md)。当前真实模型 AP 尚未生成；不能将测试中的模拟预测结果当作模型效果。
+
+## 当前实例：四组统一评测
+
+**数据已就绪：549 个扫描、183 个 visit、10,980 帧 RGB、同帧 ARKit 深度和逐帧 GT。不要重新运行 `prepare`。** RGB 原图与转正图片位于 `cache/arkit-validation-v1/raw_images/`、`images/`；深度位于 `depth_images/`，约 281 MiB。缓存摘要在每次使用时检查，输入不需要访问原始 ZIP。
+
+默认运行配置见 [benchmark_config.json](benchmark_config.json)：
+
+| 组别 | 项目 / 环境 | 输入 | 比较范围 |
+|---|---|---|---|
+| 3D-MOOD | `/mnt/workspace/3dmood` / `3d-mood-ppu` | RGB、内参、固定 17 类提示词 | RGB 几何 AP、17 类语义 AP |
+| WildDet3D | `/mnt/workspace/wilddet3d` / `wilddet3d-ppu` | RGB、内参、固定 17 类提示词 | RGB 几何 AP、17 类语义 AP |
+| CuTR RGB | `/mnt/workspace/CA1M` / `ca1m-ppu` | RGB、内参 | RGB 几何 AP |
+| CuTR RGB-D | 同上 | RGB、内参、同帧 ARKit LiDAR 深度 | 单独与 CuTR RGB 对比 |
+
+所有组使用相同帧 ID。RGB 主表采用类别无关匹配；17 类语义表只比较 3D-MOOD 与 WildDet3D。CuTR 的未知类别保存为 `class_id: null`，不从 GT 推断类别。IoU 阈值 0.25/0.50，中心距离阈值 0.25/0.50/1.00 米，均采用 101 点插值 AP。
+
+在 **DSW 原生 Terminal** 运行：
+
+```bash
+cd /mnt/workspace/3dmood
+/mnt/workspace/venvs/3d-mood-ppu/bin/python -B -m ioutest benchmark \
+  --report-root "$HOME/report/arkitscenes-three-models-v1"
+```
+
+这条命令先检查四组环境、设备、权重、本地缓存，再完成固定 10 个不同 visit 扫描的 200 帧试评测并生成报告；全部成功后继续 10,980 帧全量评测。各模型在独立子进程中加载一次、顺序运行，上一模型退出后释放资源。整个流程共四组，不把 RGB-D 纳入纯 RGB 排名。当前配置沿用实际已有的 `/root/.cache/huggingface` BERT 缓存，不指向空缓存目录。
+
+需要先查看试评测结果时，添加 `--phase pilot`；随后以相同报告目录执行 `--phase full`。中断后重复原命令，已完成帧会校验并复用，试评测的预测也能在全量阶段复用。模型/源码/环境/缓存摘要变化时拒绝混用旧预测，使用新的 `--report-root`。
+
+可选的传感器重力实验：添加 `--with-gravity`，第五组为 **CuTR RGB + 已知重力**。只从相机姿态推导重力旋转，不读取 GT 框；结果单独输出 `comparison_gravity.csv`。默认四组 CuTR 不提供重力，沿用相机直立假设。
+
+已经有完整预测时，可以在原配置与相同设备参数下仅重算评分：
+
+```bash
+/mnt/workspace/venvs/3d-mood-ppu/bin/python -B -m ioutest benchmark \
+  --report-root "$HOME/report/arkitscenes-three-models-v1" \
+  --phase full --score-only
+```
+
+### 输出位置
+
+当前用户为 root，目标根目录为 `/root/report/arkitscenes-three-models-v1`：
+
+```text
+arkitscenes-three-models-v1/
+├── README.md / experiment.json / status.json
+├── models/<model-id>/
+│   ├── model.json                    # 模型、权重、源码、输入、环境摘要
+│   └── predictions/<scan>/*.json.gz   # 原子写入数值预测，续跑复用
+├── pilot/                            # 200 帧试评测
+└── full/                             # 10,980 帧正式评测
+    ├── report.md / summary.json       # 中文报告和完成状态
+    ├── comparison_rgb.csv            # 三模型 RGB 几何 AP
+    ├── comparison_rgbd.csv           # CuTR RGB/RGB-D
+    ├── comparison_17class.csv        # 两模型语义 AP
+    ├── comparison_visit_disjoint.csv # 排除官方训练 visit 重叠的 RGB 几何 AP
+    ├── runtime.csv
+    ├── metrics/                      # 完整指标、逐类 AP、逐扫描计数
+    ├── figures/                      # AP 图，PNG/SVG
+    ├── visualizations/               # 同帧 GT/预测投影图
+    └── logs/                         # 每组环境的运行日志
+```
+
+运行期间可查看 `status.json` 和 `pilot/logs/`、`full/logs/`。报告只对完整阶段生成；失败或缺失帧不会当作空预测计分。显示图片使用分数阈值 0.1，AP 使用全部保留候选。CSV 的 AP 单位是 0～1，中文报告为百分数。
+
+### 模型输入与候选约定
+
+3D-MOOD 沿用 Demo 的 800×1333 预处理；WildDet3D 沿用自身 1008 尺寸预处理。CuTR 将长边缩放至 1024，RGB 使用双线性插值，深度用最近邻，同步更新像素中心内参，再使用原生归一化/填充；RGB 与 RGB-D 使用完全相同的尺寸设置。原始低分辨率图像并不会因放大增加细节，因此不能直接对照论文 AP。
+
+不使用 Demo 的展示分数阈值提前删框。3D-MOOD/WildDet3D 保留原生 NMS 与最多 300 个候选；CuTR 在 top-100 前只保留监督前景通道 0，另一通道不作为语义类别或物体预测。这些规则随模型摘要保存。
+
+CuTR 构建阶段固定单个 CPU 线程，随后恢复推理线程数，严格加载全部模型参数；适配当前 PPU 镜像的 CPU 初始化行为。该设置不修改模型结构、权重或原项目文件。
+
+RGB-D 使用 `lowres_depth` 的 uint16 毫米深度，读取后除以 1000 并与 RGB 一同转正；没有有效深度的像素保留为 0，后续交给 CuTR 原生深度预处理。评测器的 GT 可见性筛选与 RGB-D 的输入深度角色分开，模型不接收 GT 框、ignore 标记或当前帧真实类别。
+
+官方训练 visit 与验证集有两扫描、40 帧重叠，报告另给出 10,940 帧的排除子集。各模型具体训练集重叠尚未完成审计，不将此子集宣称为所有模型未见场景。CuTR 检出的物体也可能超出 ARKitScenes 17 类标注范围，在本协议中可能计为误检，报告会保留这一边界说明。
+
+整个 `cache/` 和 `runs/` 已被 Git 忽略；正式报告写入仓库外的 `~/report`。GitHub 只提交评测代码、配置和说明，不提交图片、深度、权重或数值预测。
 
 ## 目录与依赖
 
@@ -14,10 +91,12 @@ ioutest/
 ├── schema.py                     # ModelInput / Detection / ModelAdapter
 ├── dataset.py                    # ARKitScenes ZIP、采样和逐帧 GT
 ├── image_cache.py                # 提取所选图片、本地读取与完整性校验
+├── depth_cache.py                # RGB-D 深度缓存与输入隔离
+├── benchmark*.py / benchmark_config.json  # 多环境执行与对比报告
 ├── geometry.py / metrics.py      # 完整旋转框 IoU 与两类 AP
 ├── pipeline.py                   # 缓存、恢复、导入和报告
 ├── __main__.py                   # python -m ioutest
-├── adapters/mood3d.py             # 3D-MOOD 适配器
+├── adapters/{mood3d,wilddet,cutr}.py  # 三项目四组适配器
 ├── visualize.py / tests/
 ├── cache/                        # 本地图片；已设置 Git 忽略
 └── runs/                         # 本地结果；已设置 Git 忽略
@@ -40,7 +119,9 @@ python -m ioutest --help
 
 沿用成功运行 Demo 时的 Hugging Face 缓存配置。不要将 `HF_HOME` 改到尚未准备 BERT 的空目录。检测权重默认直接读取 `/mnt/workspace/.cache/3d-mood/torch/hub/checkpoints/gdino3d_swin-b_120e_omni3d_834c97.pt`，不在线下载。
 
-## 首次执行顺序
+## 单模型接口与新数据集的执行顺序
+
+本节保留底层命令的用法。当前已冻结清单的四组评测直接使用上面的 `benchmark` 命令；新建数据清单才需要下面的 `prepare`。
 
 ### 1. 检查设备与离线模型
 
@@ -237,7 +318,7 @@ class YourAdapter:
 
 每个 `Detection` 必须满足：
 
-- `class_id`：官方 17 类在 `schema.CLASSES` 中的整数索引，适配器自行映射源模型类别。
+- `class_id`：语义模型使用官方 17 类的整数索引；类别无关模型可以为 `None`，仅在 `benchmark` 几何 AP 中使用。旧的单模型 `infer/evaluate/import-predictions` 仍要求 17 类语义 ID。
 - `score`：有限数值，越大越可信；不强制不同模型分数校准一致。
 - `center`：三维中心，单位米，坐标为**转正后的 RGB 相机坐标**，x 右、y 下、z 前。
 - `size`：沿框局部 x/y/z 的完整边长；不是半长，也不隐含模型自己的 w/l/h 顺序。
@@ -286,4 +367,6 @@ python -B -m pytest -q --disable-warnings -p no:cacheprovider ioutest/tests
 
 35 项测试已通过，覆盖完整旋转 CPU IoU 与现有 Vis4D 算子的随机框对照、本地缓存/ZIP 输入一致性、四种旋转、源数据不可访问时的推理与可视化、缓存损坏和缺失检测。真实正式缓存的全部 10,980 帧已逐帧校验原图摘要、转正结果和内参，检查期间禁止 ZIP 访问；15 帧几何清单的缓存重建命令与 3 帧可视化也已通过。3D-MOOD 本地模型/权重加载和一个真实 ARKitScenes 帧的 CPU 推理此前已验证，输出 28 个符合统一接口的三维预测，记录在 `runs/geometry-smoke-v1/cpu_adapter_check.json`。这些验证不是完整模型评测。
 
-当前工具进程无法访问 PPU；PPU 批量推理及正式 AP 还需在 DSW 原生 Terminal 执行上面的 `doctor → infer → evaluate`。模块没有用模拟预测填写真实模型报告。
+本次全部 46 项测试通过，包括类别无关匹配、深度米单位与旋转、CuTR 原生角点与统一坐标的对照、逐帧压缩预测身份校验、分项目环境预检、续跑复用和报告完整性。3D-MOOD、CuTR RGB、CuTR RGB-D 已使用同一真实 ARKitScenes 帧在各自环境完成 CPU 推理、数值预测保存、两类 AP 和报告生成，验证目录为 `runs/benchmark-validation/real-cpu-smoke-v2/`；CuTR 采用正式配置的 1024 长边，分别输出 100 个前景候选。WildDet3D 本地完整模型构建通过，前向使用 CUDA Stream，无法在本工具进程进行 CPU 验证。这些单帧检查不代表完整模型效果评测。
+
+工具进程无法访问 PPU，且可写范围为 `/mnt/workspace` 与 `/tmp`，无法直接向 `/root/report` 写正式报告；200 帧试评测、10,980 帧全量评测和目标路径报告生成需在 DSW 原生 Terminal 执行上面的 `benchmark` 命令。模块没有用模拟预测填写真实模型报告。

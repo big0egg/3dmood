@@ -1,0 +1,60 @@
+{
+  "default_models": ["3dmood", "wilddet3d", "cutr-rgb", "cutr-rgbd"],
+  "environment": {
+    "HF_HOME": "/root/.cache/huggingface",
+    "TORCH_HOME": "/mnt/workspace/.cache/3d-mood/torch"
+  },
+  "models": {
+    "3dmood": {
+      "python": "/mnt/workspace/venvs/3d-mood-ppu/bin/python",
+      "adapter": "3dmood",
+      "semantic_labels": true,
+      "options": {
+        "project_root": "/mnt/workspace/3dmood",
+        "checkpoint": "/mnt/workspace/.cache/3d-mood/torch/hub/checkpoints/gdino3d_swin-b_120e_omni3d_834c97.pt",
+        "max_detections": 300, "score_threshold": 0.0
+      }
+    },
+    "wilddet3d": {
+      "python": "/mnt/workspace/venvs/wilddet3d-ppu/bin/python",
+      "adapter": "ioutest.adapters.wilddet:WildDetAdapter",
+      "semantic_labels": true,
+      "options": {
+        "project_root": "/mnt/workspace/wilddet3d",
+        "checkpoint": "/mnt/workspace/TEMP-FILE-STATION/wilddet3d_alldata_all_prompt_v1.0.pt",
+        "lingbot_checkpoint": "/mnt/workspace/TEMP-FILE-STATION/model.pt",
+        "max_detections": 300
+      }
+    },
+    "cutr-rgb": {
+      "python": "/mnt/workspace/venvs/ca1m-ppu/bin/python",
+      "adapter": "ioutest.adapters.cutr:CuTRAdapter",
+      "semantic_labels": false,
+      "options": {
+        "project_root": "/mnt/workspace/CA1M",
+        "checkpoint": "/mnt/workspace/CA1M/models/cutr_rgb.pth",
+        "depth_model": false, "use_gravity": false
+      }
+    },
+    "cutr-rgbd": {
+      "python": "/mnt/workspace/venvs/ca1m-ppu/bin/python",
+      "adapter": "ioutest.adapters.cutr:CuTRAdapter",
+      "semantic_labels": false,
+      "options": {
+        "project_root": "/mnt/workspace/CA1M",
+        "checkpoint": "/mnt/workspace/CA1M/models/cutr_rgbd.pth",
+        "depth_model": true, "use_gravity": false
+      }
+    },
+    "cutr-rgb-gravity": {
+      "python": "/mnt/workspace/venvs/ca1m-ppu/bin/python",
+      "adapter": "ioutest.adapters.cutr:CuTRAdapter",
+      "semantic_labels": false,
+      "options": {
+        "project_root": "/mnt/workspace/CA1M",
+        "checkpoint": "/mnt/workspace/CA1M/models/cutr_rgb.pth",
+        "depth_model": false, "use_gravity": true
+      }
+    }
+  }
+}

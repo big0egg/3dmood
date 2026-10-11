@@ -25,20 +25,21 @@ class ModelInput:
 
 @dataclass(frozen=True)
 class Detection:
-    class_id: int
+    class_id: int | None              # None only for category-agnostic models
     score: float
     center: np.ndarray                # Meters, upright OpenCV camera
     size: np.ndarray                  # Full lengths along LOCAL x,y,z
     rotation: np.ndarray              # LOCAL box -> camera, column vectors
 
     def to_dict(self):
-        if isinstance(self.class_id, (bool, np.bool_)) or not isinstance(self.class_id, (int, np.integer)):
+        if self.class_id is not None and (isinstance(self.class_id, (bool, np.bool_)) or
+                                         not isinstance(self.class_id, (int, np.integer))):
             raise ValueError("适配器必须返回整数 class_id，不能截断浮点数")
-        value = {"class_id": int(self.class_id), "score": float(self.score),
+        value = {"class_id": None if self.class_id is None else int(self.class_id), "score": float(self.score),
                  "center": np.asarray(self.center).tolist(),
                  "size": np.asarray(self.size).tolist(),
                  "rotation": np.asarray(self.rotation).tolist()}
-        validate_box(value, prediction=True)
+        validate_box(value, prediction=True, allow_unlabeled=True)
         return value
 
 
@@ -53,9 +54,10 @@ class ModelAdapter(Protocol):
         """Release resources."""
 
 
-def validate_box(box, prediction=False):
+def validate_box(box, prediction=False, allow_unlabeled=False):
     cid = box.get("class_id")
-    if isinstance(cid, bool) or not isinstance(cid, int) or not 0 <= cid < len(CLASSES):
+    if not (allow_unlabeled and cid is None) and (
+            isinstance(cid, bool) or not isinstance(cid, int) or not 0 <= cid < len(CLASSES)):
         raise ValueError(f"非法 class_id: {cid!r}")
     for name, shape in (("center", (3,)), ("size", (3,)), ("rotation", (3, 3))):
         value = np.asarray(box[name], dtype=float)

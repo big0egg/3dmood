@@ -24,7 +24,7 @@ def interpolated_ap(tp, fp, gt_count):
 
 
 def evaluate_ap(groundtruth, predictions, iou_thresholds=(.25, .5),
-                distance_thresholds=(.25, .5, 1.), _pair_cache=None):
+                distance_thresholds=(.25, .5, 1.), _pair_cache=None, class_agnostic=False):
     if set(groundtruth) != set(predictions):
         missing = set(groundtruth) - set(predictions)
         extra = set(predictions) - set(groundtruth)
@@ -38,11 +38,16 @@ def evaluate_ap(groundtruth, predictions, iou_thresholds=(.25, .5),
     for groups, pred in ((groundtruth, False), (predictions, True)):
         for boxes in groups.values():
             for box in boxes:
-                validate_box(box, prediction=pred)
+                validate_box(box, prediction=pred, allow_unlabeled=pred and class_agnostic)
+
+    if class_agnostic:
+        # Only matching ignores class; persisted boxes and semantic labels are untouched.
+        groundtruth = {f: [dict(b, class_id=0) for b in bs] for f, bs in groundtruth.items()}
+        predictions = {f: [dict(b, class_id=0) for b in bs] for f, bs in predictions.items()}
 
     results = []
     pairs = {} if _pair_cache is None else _pair_cache
-    for cid, name in enumerate(CLASSES):
+    for cid, name in enumerate(("object",) if class_agnostic else CLASSES):
         gt = {frame: [b for b in boxes if b["class_id"] == cid]
               for frame, boxes in groundtruth.items()}
         n_gt = sum(not b.get("ignore", False) for boxes in gt.values() for b in boxes)
@@ -102,7 +107,9 @@ def evaluate_ap(groundtruth, predictions, iou_thresholds=(.25, .5),
         summaries[kind] = {"map": float(np.mean(values)) if values else None,
                            "map_per_threshold": per_threshold}
     return {"ap_interpolation": "101 recall positions, precision envelope",
-            "matching": "same frame/class, confidence descending, one-to-one (including ignore)",
+            "matching": ("same frame, category-agnostic" if class_agnostic else "same frame/class") +
+                        ", confidence descending, one-to-one (including ignore)",
+            "class_agnostic": class_agnostic,
             "distance_unit": "meter", "frame_count": len(groundtruth),
             "valid_class_count": sum(row["gt_count"] > 0 for row in results),
             "summary": summaries, "per_class": results}
