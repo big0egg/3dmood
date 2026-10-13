@@ -8,13 +8,14 @@ import pytest
 from PIL import Image
 
 from ioutest.benchmark import select_frames
-from ioutest.benchmark_report import assemble_report, evaluate_model
+from ioutest.benchmark_report import assemble_report, evaluate_model, refresh_report
 from ioutest.benchmark_worker import prediction_path, read_prediction, work, write_prediction
 from ioutest.common import digest, read_json, write_json
 from ioutest.dataset import load_benchmark
 from ioutest.depth_cache import DepthInputReader, cache_depth, camera_gravity
 from ioutest.image_cache import cache_images
 from ioutest.metrics import evaluate_ap
+from ioutest.report_document import report_context
 from ioutest.schema import Detection
 from ioutest.tests.test_geometry_metrics import box
 from ioutest.tests.test_pipeline import prepared
@@ -135,6 +136,24 @@ def test_prediction_atomic_resume_rejects_changed_identity(prepared, tmp_path):
         read_prediction(path, f, "fixed", p["benchmark_id"], True)
 
 
+def test_report_counts_phase_subset_and_overlapping_ignore_reasons(prepared, tmp_path):
+    _, run = prepared
+    protocol, audit, all_frames, gt = load_benchmark(run)
+    frames = all_frames[:3]
+    gt[frames[0]["frame_id"]][0].update(
+        ignore=True, ignore_reasons=["insufficient_observed_depth_points", "outside_camera_view"])
+    result = {"frames": 3, "metrics": {"geometry": {"full": {"per_class": [{"prediction_count": 4}]}}}}
+    context = report_context(run, tmp_path, "pilot", protocol, audit, all_frames,
+                             gt, frames, {"test": result}, [])
+    assert context["frozen_frames"] == 9 and context["frames"] == 3
+    assert context["frozen_scans"] == 3 and context["scans"] == 1
+    assert context["valid_gt"] == 2 and context["ignored_gt"] == 1
+    assert context["empty_valid_gt_frames"] == 1
+    assert sum(context["ignore_reasons"].values()) == 2
+    assert context["model_prediction_counts"] == {"test": 4}
+    assert context["excluded_frames"] == 0
+
+
 class FakeCuTR:
     calls = 0
 
@@ -175,6 +194,29 @@ def test_worker_resume_and_complete_comparison_report(prepared, tmp_path, monkey
     assert (root / "pilot/report.md").exists()
     assert (root / "pilot/figures/geometry_ap.svg").exists()
     assert read_json(root / "pilot/summary.json")["complete"]
+    document = (root / "pilot/report.md").read_text()
+    context = read_json(root / "pilot/report_context.json")
+    assert context["frames"] == context["valid_gt"] == 9
+    assert context["ignored_gt"] == context["empty_valid_gt_frames"] == 0
+    assert context["model_frame_results"] == 9
+    assert len(context["visualizations"]) == 3
+    assert "公平性、适用范围" in document and "数学例子" in document
+    assert "frames.jsonl" in document and "不是逐扫描 AP" in document
+    assert "实际保存 3 张图片" in document
+    assert "10,980" not in document and "256×192" not in document
+    before = (root / "pilot/metrics/cutr-rgb.json").read_bytes()
+    # Documentation refresh uses historical provenance, without model/AP execution.
+    monkeypatch.setattr("ioutest.benchmark_report.evaluate_ap", lambda *a, **kw: pytest.fail("AP rerun"))
+    model_path = root / "models/cutr-rgb/model.json"
+    metadata = read_json(model_path)
+    write_json(model_path, dict(metadata, created_utc="later-full-stage-write"))
+    refreshed = refresh_report(root, "pilot", run, tmp_path / "review/report.md")
+    assert refreshed["inference_rerun"] is False and refreshed["ap_recalculated"] is False
+    assert (tmp_path / "review/report.md").read_text() == document
+    assert (root / "pilot/metrics/cutr-rgb.json").read_bytes() == before
+    write_json(root / "pilot/summary.json", dict(read_json(root / "pilot/summary.json"), complete=False))
+    with pytest.raises(ValueError, match="尚未完成"):
+        refresh_report(root, "pilot", run)
     # Deleted numerical predictions cannot be represented as zero detections.
     prediction_path(root / "models/cutr-rgb", frames[0]).unlink()
     with pytest.raises(FileNotFoundError):

@@ -14,6 +14,7 @@ from .dataset import load_benchmark
 from .image_cache import FrameInputReader
 from .metrics import evaluate_ap
 from .schema import CLASSES
+from .report_document import report_context, render_report
 from .visualize import _draw
 
 
@@ -205,61 +206,89 @@ def assemble_report(run_dir, report_root, phase, models, frames):
                 r["runtime"]["fps_predict"], r["runtime"]["peak_memory_bytes"]] for key, r in results.items()])
     _plot(phase_root, main_rows)
     images = _visualizations(run_dir, root, phase, results, frames)
-    example = next(iter(results.values()))
-    text = f"""# ARKitScenes 三项目评测：{'200 帧试评测' if phase == 'pilot' and len(frames) == 200 else phase}
-
-本阶段全部指定模型已完成：{len(frames):,} 帧、{example['scans']} 个扫描、{example['visits']} 个 visit。数值为实际预测计算结果；AP 表格单位为百分数，CSV 使用 0～1。benchmark_id：`{selection['benchmark_id']}`。
-
-## RGB 几何 AP：主要比较
-
-三组均输入相同的转正 RGB 和相机内参。匹配忽略类别；3D-MOOD/WildDet3D 使用固定 17 类文本，CuTR 为类别无关检测。
-
-{main_table}
-
-## CuTR RGB-D：深度输入补充实验
-
-RGB-D 使用同帧 ARKit lowres_depth 的米制深度，与 RGB 一起转正；不使用 FARO 深度或 GT 三维框。RGB-D 权重与 RGB 权重不同，因此差异同时包含模型训练与输入变化。
-
-{depth_table}
-
-## 17 类语义 AP
-
-按类别分别计算 AP 后对有有效 GT 的类别取均值；CuTR 没有这 17 类语义标签，不纳入此表。
-
-{semantic_table}
-
-## 官方训练 visit 排除后的 RGB 几何 AP
-
-本阶段排除 {example['excluded_frame_count']} 帧、扫描 {example['excluded_scan_ids']}。这只审计 ARKitScenes 官方训练/验证元数据重叠，不能证明各模型未训练过这些场景。
-
-{disjoint_table}
-
-## 评测约定与边界
-
-- 3D IoU 使用完整旋转框体积交并比，阈值 0.25、0.50；中心距离单位米，阈值 0.25、0.50、1.00；101 点插值 AP。
-- 每帧按分数降序一对一匹配，优先有效 GT，然后一对一匹配 ignore GT；空 GT 帧仍参与误检计数。
-- GT 筛选沿用冻结协议：视野内且框内观测深度点严格大于 20。GT 只提供给评分器与可视化。
-- AP 不使用 Demo 的显示分数阈值。3D-MOOD/WildDet3D 保留各自原生 NMS，最多 300 框；CuTR 在原生 top-100 之前只选择监督前景通道 0，避免另一通道占满候选；候选规则随模型来源一起记录。
-- 当前图像为 ARKitScenes 冻结 lowres_wide 帧，原始 256×192。CuTR 长边缩放至 1024（RGB 双线性、深度最近邻、同步更新像素中心内参），再使用原生预处理；两输入组尺寸相同。不能直接与论文原始设置的 AP 对比。
-- CuTR 的通用物体可能超出 ARKitScenes 17 类标注范围，这些未标注物体可能计为误检；因此本报告是限定数据标注范围的几何比较。
-- 默认 CuTR RGB/RGB-D 不输入传感器重力，采用原生模型相机直立假设；已知重力可以另加独立实验，不混入 RGB 主表。
-- GPU 时间通过同步测量，排除每次模型加载后的首帧，包含模型预处理、前向和数值导出；输入解码时间独立记录。显存为 PyTorch 最大已分配量，不等同于设备总占用。
-
-## 输出
-
-`metrics/` 保存完整指标、逐类 AP 和逐扫描计数；`runtime.csv` 保存性能；`logs/` 保存各模型日志；`../models/` 保存权重/环境/源码摘要和逐帧压缩数值预测，续跑可复用；`visualizations/` 的绿框为 GT，红框为预测，显示分数阈值 0.1 不影响 AP。共有 {len(images)} 张检查图。
-
-![RGB 几何 AP](figures/geometry_ap.png)
-"""
-    if phase == "cpu-smoke":
-        text = text.replace("# ARKitScenes 三项目评测：cpu-smoke", "# CPU 单帧链路验证")
-        text = text.replace("本阶段全部指定模型已完成：", "本报告仅验证真实单帧 CPU 执行链路，不作为正式效果或设备性能比较。\n\n本次完成：")
     if "cutr-rgb-gravity" in results:
-        rows, table = _table(results, ("cutr-rgb", "cutr-rgb-gravity"))
+        rows, _ = _table(results, ("cutr-rgb", "cutr-rgb-gravity"))
         write_csv(phase_root / "comparison_gravity.csv", ["model", *METRIC_COLUMNS], rows)
-        text += "\n## CuTR RGB + 已知重力辅助实验\n\n重力只来自 ARKit 相机姿态，不读取 GT 框；这是额外传感器信息，单独比较。\n\n" + table + "\n"
+    protocol, audit, all_frames, gt = load_benchmark(run_dir)
+    context = report_context(run_dir, root, phase, protocol, audit, all_frames,
+                             gt, frames, results, images)
+    text = render_report(context, results, selection)
+    write_json(phase_root / "report_context.json", context)
     atomic_text(phase_root / "report.md", text)
     write_json(phase_root / "summary.json", {"complete": True, "phase": phase, "selection": selection,
                "models": list(models), "frames": len(frames), "reports": {k: f"metrics/{k}.json" for k in results},
                "created_utc": utc_now()})
     atomic_text(root / "README.md", f"# 评测输出\n\n最新完成阶段：[{phase}]({phase}/report.md)，{len(frames):,} 帧。\n\n运行状态见 `status.json`；试评测与全量报告分别保存，不互相覆盖。\n")
+
+
+def refresh_report(report_root, phase="full", run_dir=None, output=None):
+    """Rewrite documentation from completed metrics; no model or AP execution.
+
+    An alternate output path permits reviewing the report before replacing it.
+    Relative artifact links continue to target the original phase directory.
+    """
+    root = Path(report_root).expanduser().resolve()
+    if run_dir is None:
+        run_dir = read_json(root / "experiment.json")["settings"]["run_dir"]
+    protocol, audit, all_frames, gt = load_benchmark(run_dir)
+    phase_root = root / phase
+    selection = read_json(phase_root / "selection.json")
+    summary = read_json(phase_root / "summary.json")
+    if (not summary.get("complete") or selection["benchmark_id"] != protocol["benchmark_id"] or
+            summary["selection"] != selection):
+        raise ValueError("当前阶段尚未完成或数据清单不一致，不能刷新报告")
+    by_id = {f["frame_id"]: f for f in all_frames}
+    ids = selection["frame_ids"]
+    if len(set(ids)) != len(ids) or not set(ids) <= set(by_id):
+        raise ValueError("阶段帧清单有重复或包含未准备的帧")
+    frames = [by_id[i] for i in ids]
+    results = {key: read_json(phase_root / "metrics" / (key + ".json")) for key in summary["models"]}
+    if not results or not frames:
+        raise ValueError("不能从空阶段生成报告")
+    for key, result in results.items():
+        identity = result["identity"]
+        if (not result.get("complete") or result["frames"] != len(frames) or
+                identity["selection_id"] != selection["selection_id"] or
+                identity["benchmark_id"] != protocol["benchmark_id"]):
+            raise ValueError(f"{key} 指标尚未完成或对应其他阶段，不能刷新报告")
+        saved = read_json(root / "models" / key / "model.json")
+        # A later full-stage worker may rewrite created_utc for the same model.
+        # Compare prediction identity and provenance, not the metadata write time.
+        if (saved["signature"] != identity["model_signature"] or
+                saved["provenance"] != result["model"]["provenance"]):
+            raise ValueError(f"{key} 模型来源与已保存指标不一致")
+    groups = {}
+    for frame in frames:
+        groups.setdefault(frame["video_id"], []).append(frame)
+    chosen = [fs[len(fs) // 2] for fs in groups.values()][:12]
+    images = []
+    for frame in chosen:
+        for key in results:
+            path = phase_root / "visualizations" / key / (Path(frame["rgb_entry"]).stem + ".png")
+            if path.is_file():
+                images.append(str(path.relative_to(phase_root)))
+    context = report_context(run_dir, root, phase, protocol, audit, all_frames,
+                             gt, frames, results, images)
+    text = render_report(context, results, selection)
+    destination = Path(output).expanduser().resolve() if output else phase_root / "report.md"
+    atomic_text(destination, text)
+    context_path = destination.with_name("report_context.json")
+    write_json(context_path, context)
+    return {"report": str(destination), "context": str(context_path), "frames": len(frames),
+            "models": list(results), "inference_rerun": False, "ap_recalculated": False}
+
+
+def main(argv=None):
+    import argparse
+    import json
+    parser = argparse.ArgumentParser(description="从已完成 benchmark 结果补全中文报告，不重新推理或计算 AP")
+    parser.add_argument("--report-root", type=Path, default=Path("~/report/arkitscenes-three-models-v1"))
+    parser.add_argument("--phase", choices=("pilot", "full", "cpu-smoke"), default="full")
+    parser.add_argument("--run-dir", type=Path, help="冻结数据目录，默认读取 experiment.json 中的历史路径")
+    parser.add_argument("--output", type=Path, help="可选的报告输出文件；省略则更新原阶段 report.md；同目录写 report_context.json")
+    args = parser.parse_args(argv)
+    print(json.dumps(refresh_report(args.report_root, args.phase, args.run_dir, args.output), ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()
