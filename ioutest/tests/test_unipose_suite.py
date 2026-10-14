@@ -11,7 +11,7 @@ from ioutest.dataset import load_benchmark
 from ioutest.depth_cache import cache_depth
 from ioutest.image_cache import cache_images
 from ioutest.schema import Detection
-from ioutest.suite_frontend import category_tokens, fixed_prompt
+from ioutest.suite_frontend import category_tokens, fixed_prompt, grounding_probabilities
 from ioutest.suite_io import ObjectInput, bind_identity, commit_record, frame_path, object_seed, read_record
 from ioutest.suite_report import assemble, inference_speed
 from ioutest.suite_score import conditional_success, score_model, workpoint
@@ -109,6 +109,46 @@ def test_speed_counts_frontend_depth_and_failed_targets():
     with pytest.raises(ValueError, match='计时'):inference_speed(result)
 
 
+def test_grounding_native_padding_and_real_numeric_failures():
+    import torch
+    from types import SimpleNamespace
+    mask = torch.tensor([[1, 1, 0]])
+    logits = torch.tensor([[[2., -2., float('-inf'), float('-inf')]]])
+    output = SimpleNamespace(logits=logits, pred_boxes=torch.ones((1, 1, 4)))
+    probabilities = grounding_probabilities(output, mask)
+    assert torch.isfinite(probabilities).all()
+    assert probabilities[0, 0, 2:].tolist() == [0., 0.]
+    for invalid in (float('nan'), float('inf'), float('-inf')):
+        output.logits = logits.clone();output.logits[0, 0, 0] = invalid
+        with pytest.raises(RuntimeError, match='非有限'):grounding_probabilities(output, mask)
+    output.logits = logits.clone();output.logits[0, 0, 3] = float('nan')
+    with pytest.raises(RuntimeError, match='非有限'):grounding_probabilities(output, mask)
+    output.logits = logits;output.pred_boxes[0, 0, 0] = float('nan')
+    with pytest.raises(RuntimeError, match='非有限'):grounding_probabilities(output, mask)
+
+
+def test_text_padding_fix_retains_only_unchanged_component_caches(tmp_path):
+    from ioutest.suite_frontend_identity import bind_frontend_identity, LEGACY_SOURCE_SHA256, FIXED_SOURCE_SHA256, TEXT_LOGITS_POLICY
+    old_identity = dict(worker_sha256=LEGACY_SOURCE_SHA256, input='same', weight='same')
+    current = dict(old_identity, worker_sha256=FIXED_SOURCE_SHA256)
+    for component in ('gt-box', 'depth'):
+        path = tmp_path/component/'model.json'
+        old_signature = bind_identity(path, old_identity)
+        assert bind_frontend_identity(path, current, component) == old_signature
+        assert read_json(path)['provenance'] == old_identity
+        assert read_json(path.with_name('text_padding_fix_compatibility.json'))['current_source_sha256'] == FIXED_SOURCE_SHA256
+        with pytest.raises(ValueError, match='变化'):bind_frontend_identity(path, dict(current, weight='different'), component)
+    text_current = dict(current, grounding_logits_policy=TEXT_LOGITS_POLICY)
+    path = tmp_path/'text/model.json'
+    old_signature = bind_identity(path, old_identity)
+    assert bind_frontend_identity(path, text_current, 'text') != old_signature
+    assert read_json(path.with_name('model.before-text-padding-fix.json'))['signature'] == old_signature
+    nonempty = tmp_path/'nonempty/model.json';bind_identity(nonempty, old_identity)
+    frame = dict(frame_id='frame', video_id='scan', rgb_entry='scan_1.png')
+    commit_record(frame_path(nonempty.parent/'frames', frame), frame, old_signature, items=[])
+    with pytest.raises(ValueError, match='变化'):bind_frontend_identity(nonempty, text_current, 'text')
+
+
 def test_complete_gt_box_report_and_missing_predictions(prepared,tmp_path):
     _,run=prepared
     cache=tmp_path/'cache';cache_images(run,cache);cache_depth(run,cache)
@@ -156,7 +196,7 @@ def test_text_frontend_keeps_multiple_instances_and_reuses_depth(tmp_path,monkey
         def to(self,device):return self
     class Processor:
         def tokenizer(self,text,**kwargs):return dict(input_ids=ids,offset_mapping=offsets)
-        def __call__(self,**kwargs):return Inputs(input_ids=torch.tensor([ids]))
+        def __call__(self,**kwargs):return Inputs(input_ids=torch.tensor([ids]), attention_mask=torch.ones((1,len(ids))))
     class Grounding:
         def to(self,device):return self
         def eval(self):return self

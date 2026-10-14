@@ -11,6 +11,7 @@ from PIL import Image
 from .common import digest, file_digest, read_json, write_json
 from .image_cache import _write_bytes
 from .schema import PROMPTS
+from .suite_frontend_identity import bind_frontend_identity
 from .suite_io import (bind_identity, commit_record, frame_path, load_array,
                        mask_checksum, read_record, require_mask, save_array)
 
@@ -34,6 +35,23 @@ def fixed_prompt():
         spans.append((start, len(text)))
         text += " . "
     return text.strip(), spans
+
+
+def grounding_probabilities(output, attention_mask):
+    """Allow native -inf text padding, but reject invalid real-token scores."""
+    import torch
+    logits = output.logits
+    if (logits.ndim != 3 or attention_mask.ndim != 2 or
+            logits.shape[0] != attention_mask.shape[0] or logits.shape[-1] < attention_mask.shape[-1]):
+        raise RuntimeError('GroundingDINO 输出与文本 attention_mask 尺寸不一致')
+    active = torch.zeros((logits.shape[0], logits.shape[-1]), dtype=torch.bool, device=logits.device)
+    active[:, :attention_mask.shape[-1]] = attention_mask.to(device=logits.device, dtype=torch.bool)
+    active = active[:, None, :].expand_as(logits)
+    if (torch.isnan(logits).any() or torch.isposinf(logits).any() or
+            not torch.isfinite(logits[active]).all() or not torch.isfinite(output.pred_boxes).all()):
+        raise RuntimeError('GroundingDINO 有效文本分数或预测框输出非有限数值，不能当作无检出计分')
+    # Native negative-infinity padding maps to probability zero under sigmoid.
+    return logits.sigmoid()
 
 
 def work(task):
@@ -71,7 +89,8 @@ def work(task):
             for p in sorted(Path(cfg['grounding_model']).rglob('*')) if p.is_file() and '.cache' not in p.parts})
         identity['prompt'] = text
         identity['grounding_disable_custom_kernels'] = True
-    signature = bind_identity(aux / "model.json", identity)
+        identity['grounding_logits_policy'] = 'finite-active-tokens; allow-native-negative-infinity-padding'
+    signature = bind_frontend_identity(aux / "model.json", identity, track)
     depth_root = root / "aux" / "predicted_depth"
     depth_identity = {"benchmark_id": task["benchmark_id"], "moge_sha256": file_digest(cfg["moge_checkpoint"]),
                       "source_sha256": file_digest(Path(cfg["project_root"]) / "infer/moge_model.py"),
@@ -79,7 +98,7 @@ def work(task):
                       "io_sha256": file_digest(Path(__file__).with_name('suite_io.py')),
                       "device": str(device), "dtype_policy": "native MoGe fp16 on accelerator",
                       "rgb_manifest": task["rgb_manifest_sha256"]}
-    depth_signature = bind_identity(depth_root / "model.json", depth_identity)
+    depth_signature = bind_frontend_identity(depth_root / "model.json", depth_identity, 'depth')
     moge = None
     done = reused = 0
     started = time.perf_counter()
@@ -129,9 +148,7 @@ def work(task):
                 if inputs['input_ids'][0].tolist() != encoded['input_ids']:
                     raise ValueError("GroundingDINO processor 改变了固定提示的 token 顺序")
                 with torch.inference_mode(): output = grounding(**inputs)
-                if not torch.isfinite(output.logits).all() or not torch.isfinite(output.pred_boxes).all():
-                    raise RuntimeError('GroundingDINO 输出非有限数值，不能当作无检出计分')
-                probabilities = output.logits[0].sigmoid()
+                probabilities = grounding_probabilities(output, inputs['attention_mask'])[0]
                 per_class = torch.stack([probabilities[:, indices].max(-1).values for indices in token_groups], dim=-1)
                 class_scores, class_ids = per_class.max(-1)
                 native_scores = probabilities.max(-1).values
