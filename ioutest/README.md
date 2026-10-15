@@ -1,5 +1,7 @@
 # ioutest 使用说明
 
+HOT3D 的五组 full 评测使用独立入口，数据和结果默认写到 `/root/benchmarkv2`。操作命令、全部参数、鱼眼/GT规则及文件说明见 [HOT3D 使用说明](HOT3D.md)。原 ARKitScenes 入口继续使用下面的命令。
+
 当前推荐使用 `unipose-benchmark` 评测 3D-MOOD、WildDet3D 和 UniPose9D 的两类任务。旧的 `benchmark` 命令保留上一轮 CuTR 实验的复现入口。
 
 ## 当前任务：UniPose9D 两类 benchmark

@@ -108,6 +108,9 @@ def doctor(device="cuda", checkpoint=None):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "hot3d-benchmark":
+        from .hot3d.runner import main as hot3d_main
+        return hot3d_main(argv[1:])
     if argv and argv[0] == "unipose-benchmark":
         from .unipose_suite import main as suite_main
         return suite_main(argv[1:])
