@@ -48,8 +48,11 @@ def test_text_evaluation_and_report_contract(tmp_path, monkeypatch):
         history = [dict(update=i, lr=.0001, seconds=.1, peak_allocated_bytes=0,
                         loss_delta_2d=1., loss_depth=1., loss_dim=1., loss_rot=1.) for i in range(1, 5)]
         jsonlines(journal, history)
+        write(journal.parent/'wandb/attempt-0001/status.json',
+              dict(stage='complete', mode='online', url=f'https://wandb.ai/test/{key}'))
     result = evaluation.report(cfg)
     assert Path(result['report']).is_file()
     assert len(list((Path(cfg['root'])/'report/visualizations').rglob('*.png'))) == 4
     assert (Path(cfg['root'])/'report/wilddet3d-training.png').is_file()
+    assert 'https://wandb.ai/test/3dmood' in Path(result['report']).read_text()
     assert len(calls) == 4

@@ -5,12 +5,27 @@
   "existing_data": "/root/benchmarkv2/data/hot3d-aria-v1",
   "data_python": "/mnt/workspace/venvs/hot3d-data/bin/python",
   "seed": 20261020,
-  "train_participants": ["P0001", "P0002", "P0003", "P0009", "P0010", "P0011"],
-  "eval_quotas": {"P0014": 1610, "P0015": 1390},
+  "train_participants": [
+    "P0001",
+    "P0002",
+    "P0003",
+    "P0009",
+    "P0010",
+    "P0011"
+  ],
+  "eval_quotas": {
+    "P0014": 1610,
+    "P0015": 1390
+  },
   "train_count": 15000,
   "eval_count": 3000,
   "candidate_interval_ns": 250000000,
-  "camera": {"width": 768, "height": 768, "horizontal_fov_degrees": 90, "clockwise_quarter_turns": 1},
+  "camera": {
+    "width": 768,
+    "height": 768,
+    "horizontal_fov_degrees": 90,
+    "clockwise_quarter_turns": 1
+  },
   "minimum_amodal_pixels": 64,
   "minimum_native_modeled_visibility": 0.1,
   "models": {
@@ -26,8 +41,31 @@
       "lingbot_checkpoint": "/root/model-assets/model-assets/wilddet3d/model.pt"
     }
   },
-  "training": {"epochs": 4, "micro_batch": 1, "accumulate": 8, "lr": 0.0001, "weight_decay": 0.0001, "warmup_updates": 300, "clip_grad": 0.1, "checkpoint_updates": 250, "threads": 1},
-  "metrics": {"iou_thresholds": [0.25, 0.5], "center_thresholds": [0.02, 0.05, 0.1, 0.25, 0.5, 1.0]},
+  "training": {
+    "epochs": 4,
+    "micro_batch": 1,
+    "accumulate": 8,
+    "lr": 0.0001,
+    "weight_decay": 0.0001,
+    "warmup_updates": 300,
+    "clip_grad": 0.1,
+    "checkpoint_updates": 250,
+    "threads": 1
+  },
+  "metrics": {
+    "iou_thresholds": [
+      0.25,
+      0.5
+    ],
+    "center_thresholds": [
+      0.02,
+      0.05,
+      0.1,
+      0.25,
+      0.5,
+      1.0
+    ]
+  },
   "display_score": 0.7,
   "max_detections": 300,
   "device": "cuda"

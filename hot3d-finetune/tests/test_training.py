@@ -69,7 +69,13 @@ def test_interruption_restores_optimizer_rng_and_exact_next_frame(tmp_path, monk
             return {'loss': (self.model.bbox3d_head(self.model.backbone(values)) - .5).square().sum()}
 
     monkeypatch.setattr(training, 'MoodTrainer', Trainer)
+    outcomes = []
+    class Tracker:
+        def finish(self, outcome):
+            outcomes.append(outcome)
+    monkeypatch.setattr(training, 'start_tracking', lambda *args: Tracker())
     cfg = config(root=tmp_path/'reference'); cfg['device'] = 'cpu'
+    cfg['wandb'] = {'enabled': False}
     cfg['training'].update(accumulate=2, checkpoint_updates=2, threads=1)
     training.train(cfg, '3dmood')
     reference = torch.load(Path(cfg['root'])/'runs/3dmood/checkpoints/final_head.pt', weights_only=False)
@@ -83,3 +89,4 @@ def test_interruption_restores_optimizer_rng_and_exact_next_frame(tmp_path, monk
     training.train(cfg, '3dmood')
     resumed = torch.load(Path(cfg['root'])/'runs/3dmood/checkpoints/final_head.pt', weights_only=False)
     assert all(torch.equal(value, resumed['head'][key]) for key, value in reference['head'].items())
+    assert outcomes == ['complete', 'failed', 'complete']

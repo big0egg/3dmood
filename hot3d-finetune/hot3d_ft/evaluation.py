@@ -103,7 +103,7 @@ def report(cfg):
              '## 训练与公平性', '',
              '从各自原权重开始，只更新三维头；使用模型原生匹配与最终层正样本三维回归损失。'
              '关闭分类、presence、三维置信度负样本损失及实测深度图辅助损失。'
-             '固定4轮，以第四轮作为正式权重，不使用评测集选轮次或阈值。',
+             f'预设训练{cfg["training"]["epochs"]}轮，以最后一轮作为正式权重，不使用评测集选轮次或阈值。',
              '每张评测图片提供相同完整25类文本词表、RGB和内参；不提供GT目标数、GT位置、'
              '物体模型、GT掩码或深度。模型结构、预训练数据和原生NMS不同，不声称这些因素相同。',
              'GT仅覆盖建模物体，背景同类物体可能被计为FP；完整三维框对细小物体的几厘米误差敏感。', '',
@@ -146,7 +146,7 @@ def report(cfg):
         axes[0].legend()
         axes[1].plot(updates, [row['lr'] for row in history])
         axes[1].set_ylabel('Learning rate'); axes[1].set_xlabel('Optimizer updates')
-        figure.suptitle(key + ': fixed four-epoch training')
+        figure.suptitle(key + f': {cfg["training"]["epochs"]}-epoch training')
         figure.tight_layout()
         relative = key + '-training.png'
         figure.savefig(directory/relative, dpi=140)
@@ -156,6 +156,14 @@ def report(cfg):
                   f'{sum(row["seconds"] for row in history)/3600:.2f}小时；'
                   f'峰值张量显存 {max(row["peak_allocated_bytes"] for row in history)/1024**3:.2f}GiB。'
                   '该时间不含模型初始化、恢复点保存和已丢弃重算的工作。', '']
+        from .wandb_log import statuses
+        attempts = statuses(cfg, key)[key]
+        if attempts:
+            latest = attempts[-1]
+            lines += [f'W&B：模式 `{latest.get("mode", "unknown")}`，状态 `{latest["stage"]}`；'
+                      f'状态文件 `{latest["path"]}`。', '']
+            if latest.get('url'):
+                lines += [f'[打开{key}的W&B训练曲线]({latest["url"]})', '']
     lines += ['## 固定帧对比图', '']
     from ioutest.hot3d.common import read_record, record_path, rgb
     from ioutest.visualize import _draw

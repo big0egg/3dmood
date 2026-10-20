@@ -83,11 +83,12 @@ def full(cfg):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='HOT3D 15k训练/3k评测：两个模型、仅文本、四轮固定训练')
-    parser.add_argument('command', choices=['check', 'audit', 'prepare', 'verify', 'train', 'evaluate', 'report', 'run'])
+    parser = argparse.ArgumentParser(description='HOT3D 15k训练/3k评测：两个模型、仅文本、默认四轮训练')
+    parser.add_argument('command', choices=['check', 'audit', 'prepare', 'verify', 'train', 'evaluate', 'report', 'run',
+                                          'wandb-status', 'wandb-sync'])
     parser.add_argument('--config', type=Path, help='配置文件，默认 configs/default.json')
     parser.add_argument('--root', type=Path, help='产物根目录，默认 /root/hot3d-finetune-v1')
-    parser.add_argument('--model', choices=['3dmood', 'wilddet3d'], help='train/evaluate 必填')
+    parser.add_argument('--model', choices=['3dmood', 'wilddet3d'], help='train/evaluate 必填；W&B命令省略则处理两个模型')
     parser.add_argument('--variant', choices=['baseline', 'finetuned'], help='evaluate 必填')
     parser.add_argument('--images', action='store_true', help='verify 同时解码并校验全部图片')
     parser.add_argument('--output', type=Path, help='audit/check 可选保存JSON路径')
@@ -118,6 +119,9 @@ def main(argv=None):
     elif args.command == 'report':
         from .evaluation import report
         result = report(cfg)
+    elif args.command in ('wandb-status', 'wandb-sync'):
+        from .wandb_log import statuses, sync_history
+        result = (statuses if args.command == 'wandb-status' else sync_history)(cfg, args.model)
     else:
         result = full(cfg)
     if args.output:

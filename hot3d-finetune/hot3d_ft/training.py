@@ -13,6 +13,7 @@ from .common import atomic_bytes, bind, checksum, data_path, digest, lock, sourc
 from .dataset import load, verify
 from .models import (MoodTrainer, WildTrainer, freeze, head_state, load_adapter,
                      training_image)
+from .wandb_log import Tracker, start_tracking
 
 
 def rng_state():
@@ -57,9 +58,7 @@ def train(cfg, key):
     options = cfg['training']
     if options['micro_batch'] != 1:
         raise ValueError('首版支持 micro_batch=1；使用 accumulate 调整有效批量')
-    if options['epochs'] != 4:
-        raise ValueError('正式实验预注册为4轮；改轮数需要新协议和独立实验目录')
-    for name in ('accumulate', 'checkpoint_updates', 'threads'):
+    for name in ('epochs', 'accumulate', 'checkpoint_updates', 'threads'):
         if type(options[name]) != int or options[name] < 1:
             raise ValueError(f'{name} 必须为正整数')
     verify(cfg)
@@ -133,7 +132,9 @@ def train(cfg, key):
         started = time.perf_counter()
         checked_gradients = False
         optimizer_transaction = False
+        tracker, outcome = Tracker(), 'failed'
         try:
+            tracker = start_tracking(cfg, key, directory, signature, len(frames))
             while epoch < options['epochs']:
                 order = list(range(len(frames)))
                 random.Random(cfg['seed'] + epoch).shuffle(order)
@@ -181,7 +182,7 @@ def train(cfg, key):
                     with (directory / 'train.jsonl').open('a') as stream:
                         stream.write(json.dumps(row, allow_nan=False) + '\n')
                     if update % 10 == 0:
-                        print(f'{key} 第 {epoch+1}/4 轮 {next_index}/{len(frames)} 帧，更新 {update}/{total_updates}，'
+                        print(f'{key} 第 {epoch+1}/{options["epochs"]} 轮 {next_index}/{len(frames)} 帧，更新 {update}/{total_updates}，'
                               f'loss={sum(losses_sum.values()):.4f}，{seconds:.2f}秒/更新', flush=True)
                     if update % options['checkpoint_updates'] == 0:
                         checkpoint()
@@ -195,8 +196,9 @@ def train(cfg, key):
             result = dict(stage='complete', model=key, epochs=epoch, updates=update,
                           final_head=str(final), final_head_sha256=checksum(final),
                           invocation_seconds=time.perf_counter()-started,
-                          checkpoint_selection='fixed fourth epoch; evaluation not consulted')
+                          checkpoint_selection=f'fixed final epoch {epoch}; evaluation not consulted')
             write(directory / 'status.json', result)
+            outcome = 'complete'
             return result
         except BaseException as exc:
             # No optimizer update occurs mid accumulation; discard partial
@@ -213,4 +215,5 @@ def train(cfg, key):
                   next_index=next_index, update=update, resumable=last.exists(), checkpoint_error=checkpoint_error))
             raise
         finally:
+            tracker.finish(outcome)
             adapter.close()

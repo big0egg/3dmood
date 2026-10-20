@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "python": "/mnt/workspace/venvs/3d-mood-ppu/bin/python",
+  "project": "hot3d-finetune",
+  "entity": null,
+  "group": null,
+  "name_prefix": "hot3d",
+  "mode": "online",
+  "fallback_offline": true,
+  "log_every_updates": 10,
+  "init_timeout": 30
+}
