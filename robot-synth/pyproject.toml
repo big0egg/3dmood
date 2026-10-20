@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "robot-synth"
+version = "0.1.0"
+description = "Reproducible LIBERO simulation ground-truth acquisition"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24,<2", "h5py>=3.10", "Pillow>=10", "PyYAML>=6"]
+
+[project.optional-dependencies]
+simulation = ["mujoco==3.2.7"]
+test = ["pytest>=7"]
+
+[project.scripts]
+robot-synth = "robot_synth.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["robot_synth*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

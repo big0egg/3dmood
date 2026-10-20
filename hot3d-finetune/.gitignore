@@ -1,0 +1,18 @@
+# Raw/cached images, labels and weights belong outside Git.
+data/
+runs/
+report/
+assets/
+.venv*/
+*.pt
+*.pth
+*.ckpt
+*.png
+*.jpg
+*.jpeg
+*.vrs
+*.tar
+*.zip
+*.log
+__pycache__/
+.pytest_cache/
