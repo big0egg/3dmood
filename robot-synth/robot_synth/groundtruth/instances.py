@@ -14,7 +14,12 @@ def descendants(model, root):
 
 def registry(model, mujoco, config):
     groups = set(config["simulation"]["visual_geom_groups"])
-    visual = [g for g in range(model.ngeom) if int(model.geom_group[g]) in groups]
+    # Planes are infinite, even when MJCF size gives them a finite drawing
+    # scale. Keep them in the renderer, but never assign them a finite 3D box
+    # or an instance ID. This also handles planes below an object's body.
+    visual = [g for g in range(model.ngeom)
+              if int(model.geom_group[g]) in groups
+              and int(model.geom_type[g]) != int(mujoco.mjtGeom.mjGEOM_PLANE)]
     entries = []
     aliases = config["groundtruth"].get("category_aliases", {})
 

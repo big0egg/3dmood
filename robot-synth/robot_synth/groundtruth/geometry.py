@@ -16,7 +16,9 @@ def primitive_extent(kind, size, rotation):
         return size[0] * np.linalg.norm(rotation[:, :2], axis=1) + size[1] * np.abs(rotation[:, 2])
     if kind == 6:  # box sizes are half extents
         return np.abs(rotation) @ size
-    raise ValueError(f"Unsupported finite geom type {kind}; no approximate GT is emitted")
+    if kind == 0:
+        raise ValueError("Infinite plane has no finite 3D box; exclude it from annotation geometry")
+    raise ValueError(f"Unsupported geom type {kind}; no approximate GT is emitted")
 
 
 class GeometryExtractor:

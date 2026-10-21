@@ -1,0 +1,57 @@
+# New dataset version after the infinite-plane annotation fix.
+# Preserve the original config and its already committed 20 images.
+schema_version: 1
+name: libero_gt_v1_plane_fix
+source:
+  root: /mnt/data/opendatasets/LIBERO
+  suites: [libero_90, libero_10]
+output:
+  root: /root/opendatasets/LIBERO_GT_v1_plane_fix
+  run_dir: ../runs/libero_gt_v1_plane_fix
+  scratch: /tmp/robot-synth/libero_gt_v1_plane_fix
+sampling:
+  seed: 20261020
+  episodes_per_scene: {train: 20, eval: 10}
+  reserve_fraction: 0.5
+  min_qpos_distance: 0.005
+  eval_scenes: {KITCHEN: 2, LIVING_ROOM: 1, STUDY: 1}
+  eval_scene_ids: []
+  quotas:
+    train: {KITCHEN: 5000, LIVING_ROOM: 3000, STUDY: 2000}
+    eval: {KITCHEN: 500, LIVING_ROOM: 250, STUDY: 250}
+simulation:
+  backend: mujoco_xml
+  mujoco_version: 3.2.7
+  gl: osmesa
+  cameras: [agentview, robot0_eye_in_hand]
+  width: 512
+  height: 512
+  visual_geom_groups: [1]
+  max_geom: 20000
+  asset_roots:
+    libero: ../third_party/LIBERO/libero/libero/assets
+    robosuite: ../third_party/robosuite/robosuite/models/assets
+groundtruth:
+  include_robot: true
+  include_support: true
+  include_articulated_parts: true
+  depth_background: invalid
+  category_aliases:
+    akita_black_bowl: bowl
+    white_bowl: bowl
+    red_coffee_mug: mug
+    white_yellow_mug: mug
+    porcelain_mug: mug
+    wine_bottle: bottle
+    wooden_cabinet: cabinet
+    wooden_shelf: shelf
+    wooden_two_layer_shelf: shelf
+    wooden_tray: tray
+    white_storage_box: box
+    black_book: book
+    yellow_book: book
+    moka_pot: moka_pot
+validation:
+  geometry_tolerance_m: 0.002
+  minimum_owned_pixels: 32
+  max_failures: 3

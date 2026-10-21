@@ -4,7 +4,7 @@
 
 **第一次使用，按第二部分的步骤 1～12 顺序执行即可。默认参数已经配好，不需要先修改 YAML。** 如果使用 Docker，请改按第七部分执行；两种环境方式选一种。
 
-> 当前进度：代码、原始数据清点和采样计划已完成；真实 GT 尚未生成。上一轮检查缺少 MuJoCo、OSMesa 和仿真资产，安装时还遇到网络不可用。本说明给出准备环境和实际采集的操作；安装脚本与 Docker 镜像尚未在本终端完成联网验证。详细记录见 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)。
+> 当前进度（2026-10-21）：环境已能真实渲染，旧版本试采保存了 20 张，随后在客厅场景的无限地面框计算处停止。无限地面处理已修复；这批旧结果保留，修复后请按 [3.4 节](#34-遇到无限地面报错后使用修复版本)使用独立的新配置重新试采，不直接续写旧版本。Docker 镜像尚未构建验证。详细记录见 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)。
 
 ## 目录
 
@@ -44,14 +44,14 @@
 |---|---|---|
 | 程序代码 | `/mnt/workspace/3dmood/robot-synth` | 所有命令先进入这里执行 |
 | 原始示范 | `/mnt/data/opendatasets/LIBERO` | 读取 `libero_90` 和 `libero_10`，保持只读 |
-| 最终 GT 数据 | `/mnt/data/opendatasets/LIBERO_GT_v1` | 保存 RGB、深度、分割和真值 |
-| 计划和运行记录 | `/mnt/workspace/3dmood/robot-synth/runs/libero_gt_v1` | 保存清点、采样计划、进度和质量报告 |
+| 最终 GT 数据 | YAML 的 `output.root` | 原始方案为 `/mnt/data/opendatasets/LIBERO_GT_v1`；当前配置已由用户改为 `/root/opendatasets/LIBERO_GT_v1` |
+| 计划和运行记录 | YAML 的 `output.run_dir` | 原始方案为 `../runs/libero_gt_v1`；当前配置为 `../runs/libero_gt_local_v1`，均以配置文件目录为基准 |
 | 临时缓存 | `/tmp/robot-synth/libero_gt_v1` | 写完并核验上传的样本组会清理本地缓存 |
 | 配置文件 | `configs/libero_gt_v1.yaml` | 管理输入输出、数量、相机等参数 |
 
 **原始示范、最终结果、运行记录、临时缓存这四个目录必须互不包含。** 运行记录可以放在工程目录下，最终数据不要写进原始示范目录。
 
-`/mnt/data` 是 OSS 挂载。`df` 显示的巨大容量不代表实际配额；临时缓存所在磁盘也需要保留足够空间。先用 200 张试采测量数据大小，再扩展到全量。
+下文主流程展示原始方案的路径；以实际 YAML 为准。若使用修复版本，统一按 3.4 节操作。`/mnt/data` 是 OSS 挂载；`/root/opendatasets` 是否为挂载点需在实例上确认，不能仅凭目录名判断。`df` 显示的巨大容量不代表实际配额；临时缓存所在磁盘也需要保留足够空间。先用 200 张试采测量数据大小，再扩展到全量。
 
 ## 二、按顺序执行：准备环境到完成采集
 
@@ -236,16 +236,16 @@ python -m robot_synth doctor --config configs/libero_gt_v1.yaml
 
 ### 步骤 8：运行真实离屏渲染测试
 
-**这一步做什么：** 在一个简单的真实 MuJoCo 场景中验证 RGB、米制深度和实例分割接口。
+**这一步做什么：** 在无地面和带无限地面的两个真实 MuJoCo 场景中验证 RGB、米制深度和实例分割接口。
 
 ```bash
 MUJOCO_GL=osmesa PYOPENGL_PLATFORM=osmesa \
   python -m pytest -q tests/test_native_renderer.py
 ```
 
-**可以继续的条件：** 结果包含 `1 passed`。
+**可以继续的条件：** 结果包含 `2 passed`。
 
-**如果显示 `1 skipped`，也不能继续试采。** 这表示缺少运行条件，测试没有执行，不能当作渲染成功。根据跳过原因检查 MuJoCo 版本或 OSMesa。
+**如果显示 `skipped`，也不能继续试采。** 这表示缺少运行条件，测试没有执行，不能当作渲染成功。根据跳过原因检查 MuJoCo 版本或 OSMesa。
 
 此测试使用简单几何体；实际 LIBERO 资产与标注是否正确，还需要通过下一步的真实试采检查。
 
@@ -404,6 +404,55 @@ python -m robot_synth collect --config configs/libero_gt_v2.yaml --limit 200
 
 只调整 `--limit`、是否续采、允许小批量检查、预览图数量，不需要另建数据集。修改 YAML 中影响采样、渲染、GT 或质量规则的内容，需要新计划和新输出。
 
+### 3.4 遇到无限地面报错后使用修复版本
+
+**适用情况：** 已采到 20 张后，报 `Unsupported finite geom type 0`。类型 0 是无限平面，旧代码错误地尝试为它计算有限物体框；不是数据下载失败。
+
+修复后地面仍出现在 RGB、深度中，但不生成地面物体框，实例编号为 0。有限的桌面、物体、机器人和部件仍按原配置标注；未知的其他几何类型仍会报错，不自动生成近似框。
+
+**为什么要换版本：** 源码摘要属于数据集的身份。代码更新后，旧版本的 `--resume` 会拒绝不同的 `profile_id`。不篡改旧元数据，也不把旧的 20 张手工复制进新数据集。
+
+已提供完整新配置 [configs/libero_gt_v1_plane_fix.yaml](configs/libero_gt_v1_plane_fix.yaml)，保留当前用户选择的 `/root/opendatasets` 父目录：
+
+| 配置项 | 新版本的值 |
+|---|---|
+| `output.root` | `/root/opendatasets/LIBERO_GT_v1_plane_fix` |
+| `output.run_dir` | `../runs/libero_gt_v1_plane_fix` |
+| `output.scratch` | `/tmp/robot-synth/libero_gt_v1_plane_fix` |
+
+旧目录和旧配置不变；新版本重新收集 200 张，之后目标仍是 train 10,000 张、eval 1,000 张。如果要换回 OSS 路径，应在运行新 `plan` **之前**修改新 YAML 的 `output.root`，后续保持一致。
+
+在工程目录、已激活 `.venv` 的终端，依次执行；每一步通过后再执行下一步：
+
+```bash
+# 1. 确认两个真实渲染测试均通过。
+MUJOCO_GL=osmesa PYOPENGL_PLATFORM=osmesa \
+  python -m pytest -q tests/test_native_renderer.py
+
+# 2. 为新配置生成独立计划。
+python -m robot_synth plan --config configs/libero_gt_v1_plane_fix.yaml
+
+# 3. 检查环境，要求 ready: true。
+python -m robot_synth doctor --config configs/libero_gt_v1_plane_fix.yaml
+
+# 4. 在新输出目录试采；第一次不加 --resume。
+python -m robot_synth collect --config configs/libero_gt_v1_plane_fix.yaml --limit 200
+
+# 5. 检查试采并生成预览。
+python -m robot_synth validate --config configs/libero_gt_v1_plane_fix.yaml --allow-partial
+python -m robot_synth report --config configs/libero_gt_v1_plane_fix.yaml --max-previews 40
+```
+
+人工查看 `runs/libero_gt_v1_plane_fix/quality_report/previews/`，确认正常后继续全量：
+
+```bash
+python -m robot_synth collect --config configs/libero_gt_v1_plane_fix.yaml --resume
+python -m robot_synth validate --config configs/libero_gt_v1_plane_fix.yaml
+python -m robot_synth report --config configs/libero_gt_v1_plane_fix.yaml --max-previews 40
+```
+
+如果只是新版本试采中断，使用 `collect --config configs/libero_gt_v1_plane_fix.yaml --limit 200 --resume`。之后所有命令都保持使用这份新配置。
+
 ## 四、命令和命令行参数说明
 
 ### 4.1 命令怎么写
@@ -459,7 +508,7 @@ python -m robot_synth 子命令 [参数]
 
 ## 五、YAML 配置参数说明
 
-配置文件为 [configs/libero_gt_v1.yaml](configs/libero_gt_v1.yaml)。YAML 使用空格缩进，布尔值写 `true` 或 `false`；列表写 `[值1, 值2]`；路径建议使用绝对路径。
+配置文件为 [configs/libero_gt_v1.yaml](configs/libero_gt_v1.yaml)，无限地面修复后的独立版本为 [configs/libero_gt_v1_plane_fix.yaml](configs/libero_gt_v1_plane_fix.yaml)。下表默认值按原始方案说明；当前用户已改动的路径见 1.2 节，新版本路径见 3.4 节。YAML 使用空格缩进，布尔值写 `true` 或 `false`；列表写 `[值1, 值2]`；路径建议使用绝对路径。
 
 **YAML 中的相对路径以 YAML 文件所在目录为基准。** 例如配置在 `configs/`，`../runs/libero_gt_v1` 代表工程下的 `runs/libero_gt_v1`。命令行 `--input`、`--output` 的相对路径则以当前终端目录为基准。
 
@@ -542,7 +591,7 @@ sampling:
 | 配置项 | 默认值 | 含义 | 可填内容及影响 |
 |---|---|---|---|
 | `groundtruth.include_robot` | `true` | 是否把机器人作为独立标注实例保存 | 布尔值 `true`／`false`。`false` 时机器人仍可出现在图像中，但不作为标注实例保存 |
-| `groundtruth.include_support` | `true` | 是否保存程序识别到的 table／floor 支撑实例 | 布尔值 `true`／`false`。仅对识别到的顶层 body 有效，不保证给所有背景地面或台面建立语义实例 |
+| `groundtruth.include_support` | `true` | 是否保存程序识别到的有限 table／floor 支撑实例 | 布尔值 `true`／`false`。仅对识别到的顶层 body 有效；无限平面始终作为背景，不生成物体框或实例 ID |
 | `groundtruth.include_articulated_parts` | `true` | 是否把带关节的子部件单独保存 | 布尔值 `true`／`false`。子部件默认类别为 `articulated_part`，保留父子层级，不自动猜成抽屉或柜门 |
 | `groundtruth.depth_background` | `invalid` | 无几何背景深度的规则说明 | 当前仅按 `invalid` 使用。这是保留说明字段；代码固定将无效深度置 0，并用 valid 掩码排除，改成其他字符串不会切换处理方式 |
 | `groundtruth.category_aliases` | 配置中的名称映射表 | 将资产原始类别映射为统一类别 | YAML 字典，格式 `原始类别: 目标类别`；例如 `akita_black_bowl: bowl`。没有映射的类别保留原始名称 |
@@ -629,7 +678,7 @@ LIBERO_GT_v1/
 | `z_m` | float32 二维数组 | 相机 Z 方向深度，单位米；不是到相机中心的欧氏距离 |
 | `valid` | bool 二维数组 | `true` 表示深度有效；无效位置的 `z_m` 为 0 |
 
-`instance.png` 是 uint16 实例编号图，不是普通彩色预览。编号 0 表示未标注的世界背景，不保证该位置没有有效深度。各编号的对应实例记录在 `annotation.json` 中。
+`instance.png` 是 uint16 实例编号图，不是普通彩色预览。编号 0 表示未标注的世界背景，也包括无限地面；这些位置仍可能有正常 RGB 和有效深度。各编号的对应实例记录在 `annotation.json` 中。
 
 ### 6.3 标注中的主要字段
 
@@ -725,7 +774,7 @@ rsynth plan
 # 3. 检查运行条件；必须 ready: true。
 rsynth doctor
 
-# 4. 真实渲染测试；必须 1 passed，不能是 skipped。
+# 4. 真实渲染测试；必须 2 passed，不能是 skipped。
 rsynth_python -m pytest -q tests/test_native_renderer.py
 
 # 5. 试采 200 张。
@@ -756,6 +805,8 @@ rsynth report --max-previews 40
 | 渲染测试只有 `skipped` | 测试未执行。按跳过原因补依赖，不进入采集 |
 | `Runtime is not ready` | 打开 `runs/libero_gt_v1/doctor.json`，逐项处理 `ok: false` |
 | `Cannot uniquely resolve asset` | 检查具体资产文件、两个 asset_roots 和版本；不能用任意同名文件替换 |
+| `Unsupported finite geom type 0` | 旧版尝试给无限地面计算物体框；更新后按 3.4 节使用新配置重新试采，旧的 20 张保留 |
+| `Dataset identity differs (profile_id)` | 源码、依赖或资产与旧结果不同。不要绕过校验；无限地面修复后按 3.4 节使用独立新版本 |
 | `Existing plan differs`、`Configuration differs` | 当前配置或原始数据与固定计划不一致。恢复原配置，或按第三部分建立新版本 |
 | `Dataset already exists; use --resume` | 输出已有运行记录，使用相同配置加 `--resume` |
 | 输出非空且没有本工具记录 | 换一个新的独立输出目录，避免混入其他文件 |

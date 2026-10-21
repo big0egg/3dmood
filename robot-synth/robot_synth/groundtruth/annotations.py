@@ -26,5 +26,5 @@ def annotate_view(entries, boxes, instance_map, K, world_from_camera, camera_fro
             "T_world_from_camera": np.asarray(world_from_camera).tolist(),
             "T_camera_from_world": np.asarray(camera_from_world).tolist(),
             "depth_convention": "camera_z_meters", "background_instance_id": 0,
-            "background_policy": "unannotated_world_scenery_is_0_not_semantic_object_groundtruth",
+            "background_policy": "unannotated_world_scenery_and_infinite_planes_are_0_not_semantic_object_groundtruth",
             "objects": records}

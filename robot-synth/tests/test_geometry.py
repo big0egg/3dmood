@@ -31,8 +31,10 @@ def test_primitive_exact_bounds():
     assert np.allclose(primitive_extent(3, [1, 2, 0], rotation), [1, 1, 3])
     assert np.allclose(primitive_extent(5, [1, 2, 0], rotation), [1, 1, 2])
     assert np.allclose(primitive_extent(4, [1, 2, 3], np.eye(3)), [1, 2, 3])
-    with pytest.raises(ValueError, match="Unsupported"):
+    with pytest.raises(ValueError, match="Infinite plane"):
         primitive_extent(0, [1, 1, 1], rotation)
+    with pytest.raises(ValueError, match="Unsupported"):
+        primitive_extent(1, [1, 1, 1], rotation)
 
 
 def test_full_mesh_box_center_offset_and_articulated_motion():
@@ -109,14 +111,38 @@ def test_hierarchical_instance_masks(config):
     from robot_synth.groundtruth.instances import registry
     model = SimpleNamespace(nbody=3, ngeom=2, body_parentid=np.array([0, 0, 1]),
                             body_jntnum=np.array([0, 1, 1]), geom_group=np.array([1, 1]),
-                            geom_bodyid=np.array([1, 2]))
+                            geom_bodyid=np.array([1, 2]), geom_type=np.array([6, 6]))
     names = {0: 'world', 1: 'box_1_main', 2: 'box_1_drawer'}
-    mj = SimpleNamespace(mjtObj=SimpleNamespace(mjOBJ_BODY=1), mj_id2name=lambda m, t, i: names[i])
+    mj = SimpleNamespace(mjtObj=SimpleNamespace(mjOBJ_BODY=1),
+                         mjtGeom=SimpleNamespace(mjGEOM_PLANE=0), mj_id2name=lambda m, t, i: names[i])
     entries, owners = registry(model, mj, config)
     assert owners.tolist() == [1, 2]
     assert entries[0]['segmentation_ids'] == [1, 2]
     assert entries[1]['parent_instance_id'] == 1
     assert entries[1]['category'] == 'articulated_part'
+
+
+def test_planes_are_background_but_finite_supports_and_parts_are_annotated(config):
+    from robot_synth.groundtruth.instances import registry
+    # Both a dedicated floor body and a plane nested below a movable object
+    # must be excluded, while a finite support and articulated part survive.
+    model = SimpleNamespace(nbody=5, ngeom=5, body_parentid=np.array([0, 0, 0, 2, 0]),
+                            body_jntnum=np.array([0, 0, 1, 1, 0]), geom_group=np.ones(5, dtype=int),
+                            geom_bodyid=np.array([1, 2, 3, 3, 4]), geom_type=np.array([0, 6, 0, 6, 6]))
+    names = {0: 'world', 1: 'floor', 2: 'box_1_main', 3: 'box_1_drawer', 4: 'table'}
+    mj = SimpleNamespace(mjtObj=SimpleNamespace(mjOBJ_BODY=1),
+                         mjtGeom=SimpleNamespace(mjGEOM_PLANE=0), mj_id2name=lambda m, t, i: names[i])
+    entries, owners = registry(model, mj, config)
+    assert [entry['body_name'] for entry in entries] == ['box_1_main', 'box_1_drawer', 'table']
+    assert owners.tolist() == [0, 1, 0, 2, 3]
+    assert entries[0]['geom_ids'] == [1, 3]
+    assert entries[0]['segmentation_ids'] == [1, 2]
+    assert entries[1]['parent_instance_id'] == 1
+    assert entries[2]['kind'] == 'support'
+    config['groundtruth']['include_support'] = False
+    entries, owners = registry(model, mj, config)
+    assert [entry['body_name'] for entry in entries] == ['box_1_main', 'box_1_drawer']
+    assert owners.tolist() == [0, 1, 0, 2, 0]
 
 
 def test_native_camera_contract_without_initializing_runtime():

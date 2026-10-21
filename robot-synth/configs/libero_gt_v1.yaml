@@ -4,8 +4,8 @@ source:
   root: /mnt/data/opendatasets/LIBERO
   suites: [libero_90, libero_10]
 output:
-  root: /mnt/data/opendatasets/LIBERO_GT_v1
-  run_dir: ../runs/libero_gt_v1
+  root: /root/opendatasets/LIBERO_GT_v1
+  run_dir: ../runs/libero_gt_local_v1
   scratch: /tmp/robot-synth/libero_gt_v1
 sampling:
   seed: 20261020
