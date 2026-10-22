@@ -1,6 +1,8 @@
 # HOT3D 微调：15,000 帧训练＋3,000 帧评测
 
-本模块微调 **3D-MOOD、WildDet3D**，只运行 **RGB＋相机内参＋固定类别文本**。
+本模块微调 **3D-MOOD、WildDet3D**，训练与原有主评测使用 **RGB＋相机内参＋固定类别文本**。
+新增WildDet3D的 **RGB＋GT二维框＋相机内参** 补充评测，对比官方与微调权重，不重新训练。
+3D-MOOD当前原生推理入口不支持框提示，不参加此项。新增实验的完整操作见 [introduce.md](introduce.md)。
 从现有官方权重开始，冻结原二维检测、语言和主要特征网络，更新三维预测头。
 默认训练4轮，使用预先设定的最后一轮权重评测，不用评测集挑权重。
 训练 loss 实时上传到 W&B；同时保留本地逐次更新记录和报告中的静态曲线。
@@ -18,8 +20,40 @@
 3D-MOOD真实帧的CPU训练前向／反向。
 正式任务在DSW原生Terminal运行；当前执行到哪里，以产物根目录的 `suite_status.json`、
 `status.json` 和模型的 `runs/<模型>/status.json` 为准，不能仅凭启动日志判断完成。
-本次添加W&B时，全流程仍在准备GT，尚未训练；已有进程会在启动训练子进程时读取新增的
-`configs/wandb.json`，无需重启数据准备。已完成的验证见 [VALIDATION.md](VALIDATION.md)。
+原流程进度在 `suite_status.json`；新增框提示进度在 `evaluation/gt-box/status.json`、
+`evaluation/gt-box/suite_status.json`。`configs/wandb.json`在训练启动时读取。
+已完成的验证见 [VALIDATION.md](VALIDATION.md)。
+
+## 已有文本结果时，补跑GT二维框提示评测
+
+当前实验已完成文本微调评测。保持原数据、权重和配置，在DSW原生Terminal执行：
+
+```bash
+nohup /mnt/workspace/venvs/wilddet3d-ppu/bin/python -B \
+  /mnt/workspace/3dmood/hot3d-finetune/run.py box-supplement \
+  --config /root/hot3d-finetune-v1/resolved_config.json \
+  > /mnt/workspace/3dmood/hot3d-finetune/box-launch.log 2>&1 &
+```
+
+它依次运行两份权重的框提示推理与评分，再合并 `/root/hot3d-finetune-v1/report/report.md`；
+不重新抽帧、训练或执行文本评测。中断后重跑同一命令，完整目标与帧会校验后复用。
+
+- 仍使用同一批3,000张评测图、14,373个有效目标，输入框来自GT的 `projected_bbox`。
+- 只提供RGB、内参和一个GT二维框，使用原生 `geometric` 模式；不提供GT类别、三维几何、mask或深度。
+- 主指标是绑定输入目标的成功率，辅助指标是geometry AP；不计算semantic AP。
+  失败计入分母，0.7不删除评测预测；设备/OOM等意外异常会停止而不跳过。
+- GT框给出了理想定位和目标数量，因此与RGB＋文本结果分表展示，不能直接当作同输入条件比较。
+- 这是文本流程下微调权重向框提示流程的迁移评测，没有进行框提示专项训练。
+
+查看进度：
+
+```bash
+tail -n 60 -f /mnt/workspace/3dmood/hot3d-finetune/box-launch.log
+```
+
+报告新增成功率、辅助AP、平均IoU、中心误差、失败原因、秒/目标、FPS、同目标改善/退步及框图。
+数值只在完整评分后出现，未完成时明确显示待完成。
+参数、分步命令、输出文件和评分口径见 [introduce.md](introduce.md)。
 
 ## 直接执行全流程
 
@@ -39,7 +73,7 @@ nohup bash /mnt/workspace/3dmood/hot3d-finetune/run_full.sh \
 3. 准备并校验精确15,000帧训练集、3,000帧评测集。
 4. 3D-MOOD原权重评测 → 微调4轮 → 微调权重评测。
 5. WildDet3D原权重评测 → 微调4轮 → 微调权重评测。
-6. 生成最终报告、CSV、JSON、固定帧三维框对比图。
+6. 生成文本报告后，自动补跑WildDet3D两份权重的GT二维框提示评测，合并最终报告与分条件CSV/JSON、框图。
 
 查看日志：
 
@@ -327,14 +361,18 @@ bash "$FT/setup_data_env.sh"
 必须与基线使用相同配置和评测集，不先按0.7删除预测。两个命令成功结束后，
 应有两个模型×两种权重共四组完整预测与指标。
 
-**步骤7：生成最终报告。**
+**步骤7：补充GT二维框提示并生成最终报告。**
+
+先执行本文开头的 `box-supplement`。若两组框提示评分都已完成，只需合并报告：
 
 ```bash
 "$DATA_PY" -B "$FT/run.py" report --root "$ARTIFACTS"
 ```
 
 打开 `$ARTIFACTS/report/report.md`，同时得到 `comparison.csv`、`results.json`、
-训练曲线PNG及固定12帧的三维框对比图。报告会核验训练日志更新数，缺记录时拒绝生成完整报告。
+训练曲线PNG及固定12帧的三维框对比图。首次生成文本报告会核验训练日志；
+已有文本报告时保留原内容并合并框提示结果。新增 `box_comparison.csv`、`box_ap_comparison.csv`、
+`box_paired_comparison.csv`，`results.json`保留原models并新增gt_box字段。
 若已产生W&B状态，报告还包含最新一次运行的状态和网页链接。
 
 ## 训练、恢复与评测约定
@@ -417,6 +455,7 @@ cd /mnt/workspace/3dmood
 PYTHONDONTWRITEBYTECODE=1 /mnt/workspace/venvs/3d-mood-ppu/bin/python -B -m pytest -q --disable-warnings -p no:cacheprovider hot3d-finetune/tests/test_data.py hot3d-finetune/tests/test_training.py hot3d-finetune/tests/test_evaluation.py hot3d-finetune/tests/test_wandb_log.py
 PYTHONDONTWRITEBYTECODE=1 /mnt/workspace/venvs/3d-mood-ppu/bin/python -B -m pytest -q --disable-warnings -p no:cacheprovider hot3d-finetune/tests/test_native_coders.py -k 3dmood
 PYTHONDONTWRITEBYTECODE=1 /mnt/workspace/venvs/wilddet3d-ppu/bin/python -B -m pytest -q --disable-warnings -p no:cacheprovider hot3d-finetune/tests/test_native_coders.py -k wilddet3d
+PYTHONDONTWRITEBYTECODE=1 /mnt/workspace/venvs/3d-mood-ppu/bin/python -B -m pytest -q --disable-warnings -p no:cacheprovider hot3d-finetune/tests/test_box_evaluation.py
 ```
 
 参考：[HOT3D数据格式与质量标记](https://github.com/facebookresearch/hot3d)、

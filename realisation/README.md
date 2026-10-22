@@ -108,14 +108,40 @@ export TRANSFORMERS_OFFLINE=1
 
 **自动下载（备选）**
 
-不手动准备权重时，执行：
+先在浏览器登录 Hugging Face，依次打开下面三个官方页面，阅读并同意 **NVIDIA Open Model License Agreement** 和页面上的信息共享授权，确认该账号已经获得文件访问权限后再继续：
+
+- [Cosmos-Transfer2.5-2B](https://huggingface.co/nvidia/Cosmos-Transfer2.5-2B)
+- [Cosmos-Predict2.5-2B](https://huggingface.co/nvidia/Cosmos-Predict2.5-2B)
+- [Cosmos-Guardrail1](https://huggingface.co/nvidia/Cosmos-Guardrail1)
+
+然后在[同一账号的 Token 页面](https://huggingface.co/settings/tokens)创建用于这些模型下载的读取 Token。在已完成第 3 步的终端执行：
 
 ```bash
-unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE
-hf auth login
+unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE HF_HUB_DISABLE_IMPLICIT_TOKEN
+HF_ENDPOINT=https://huggingface.co hf auth login
 ```
 
-按提示输入自己有读取权限的 Hugging Face Token。首次生成时，程序会下载所需权重，保存在第 3 步指定的目录中。环境准备完成后，按 [introduce.md](introduce.md) 运行项目。
+按提示输入 Token；确认登录成功。**命令行登录不会代替网页上的协议确认。** 未获准访问对应仓库、Token 权限不足或仍在等待审核时，自动下载可能被 `401/403` 或 `GatedRepoError` 阻止。访问授权流程见 [Hugging Face 官方说明](https://huggingface.co/docs/hub/models-gated)。
+
+**从官方站点自动下载：** 登录后执行：
+
+```bash
+export HF_ENDPOINT=https://huggingface.co
+unset HF_HUB_DISABLE_XET
+```
+
+**通过镜像自动下载：** 登录仍在官网完成，然后在同一终端执行：
+
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+export HF_HUB_DISABLE_XET=1
+```
+
+这里使用第三方 [HF-Mirror](https://hf-mirror.com/)，通过 `HF_ENDPOINT` 指定下载入口，并关闭 Xet 下载通道以使用 HTTP 下载。镜像支持携带 Token 下载受限仓库，下载请求会将读取 Token 发给镜像服务；使用专门用于这些模型的读取 Token。**镜像同样要求官网已授权，不会跳过协议或审核。**
+
+保留上表的模型名称和版本，缓存位置也保持第 3 步的设置。镜像是否能取得全部文件及固定版本，以实际下载结果为准；不能仅凭模型页面存在就认定权重齐全。
+
+选好一种下载入口后，按 [introduce.md](introduce.md) 运行项目。首次生成时，程序会自动下载所需权重并复用已有缓存。以后打开新终端，在第 3 步之后重新设置所选的 `HF_ENDPOINT`；镜像方式还需设置 `HF_HUB_DISABLE_XET=1`。
 
 ## 环境准备完成
 
