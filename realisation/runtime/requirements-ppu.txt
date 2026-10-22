@@ -1,6 +1,9 @@
 # Python dependencies only. Never select the upstream cu128/cu130 extras on PPU.
 # Binary SDK packages are protected by constraints generated from the base image.
+# Install with scripts/bootstrap_cosmos25_ppu.py, which also applies the
+# upstream NumPy policy to the packages in requirements-ppu-overrides.txt.
 hatchling>=1.27
+editables~=0.3
 numpy==2.2.6
 albumentations>=2.0.8
 attrs>=25.4.0
@@ -23,7 +26,6 @@ iopath>=0.1.10
 ipdb>=0.13.13
 loguru>=0.7.3
 mediapy>=1.2.4
-megatron-core==0.14.0
 ml-dtypes>=0.5.3
 moderngl>=5.11.1
 modelscope>=1.31.0
@@ -38,6 +40,7 @@ OpenEXR>=3.3.1
 pandas>=2.3.3
 peft>=0.17.1
 pillow>=11.3.0
+packaging>=24.2
 protobuf>=6.33.0
 pyarrow>=21.0.0
 pycocotools>=2.0.10

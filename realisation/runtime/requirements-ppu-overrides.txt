@@ -1,0 +1,5 @@
+# Cosmos uses NumPy >=2 via tool.uv.override-dependencies in pyproject.toml.
+# Megatron 0.14.0 is also pinned by the upstream uv.lock but declares numpy<2.
+# The bootstrap installs ONLY this package without dependency resolution,
+# after resolving its dependencies normally, then verifies the exception.
+megatron-core==0.14.0

@@ -13,6 +13,33 @@ ROOT = Path(__file__).resolve().parents[1]
 PROTECTED = ('torch', 'torchvision', 'transformer-engine', 'flash-attn', 'triton')
 
 
+def verify_megatron_dependencies():
+    """Allow only the exact NumPy override used by this Cosmos environment."""
+    from packaging.requirements import Requirement
+
+    if metadata.version('megatron-core') != '0.14.0':
+        raise RuntimeError('Expected megatron-core==0.14.0')
+    requirements = metadata.requires('megatron-core')
+    if not requirements:
+        raise RuntimeError('Megatron dependency metadata is missing')
+    checked = {}
+    for entry in requirements:
+        requirement = Requirement(entry)
+        if requirement.marker and not requirement.marker.evaluate({'extra': ''}):
+            continue
+        version = metadata.version(requirement.name)
+        if requirement.name.lower().replace('_', '-') == 'numpy':
+            if str(requirement.specifier) != '<2.0.0' or version != '2.2.6':
+                raise RuntimeError(f'Unexpected NumPy override: {entry}; installed {version}')
+        elif requirement.url or not requirement.specifier.contains(version, prereleases=True):
+            raise RuntimeError(f'Unsatisfied Megatron dependency: {entry}; installed {version}')
+        checked[requirement.name.lower().replace('_', '-')] = version
+    if not {'numpy', 'torch', 'packaging'} <= checked.keys():
+        raise RuntimeError('Megatron dependency metadata differs from the expected release')
+    print(json.dumps({'megatron-core': '0.14.0', 'checked_dependencies': checked,
+                      'numpy_policy': 'Cosmos upstream NumPy 2 override'}), flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true', help='Print base SDK versions only; no writes/downloads')
@@ -62,6 +89,14 @@ def main():
     print('Installing Python dependencies into', target, flush=True)
     subprocess.run(pip + ['install', '--index-url', args.index_url, '--no-build-isolation', '--prefer-binary', '--timeout', '15', '--retries', '0',
                          '-c', str(constraints), '-r', str(ROOT / 'runtime/requirements-ppu.txt')], env=env, check=True)
+    # Mirror the upstream uv.lock + NumPy override. All Megatron dependencies
+    # above are resolved normally; only Megatron's NumPy upper bound is replaced.
+    subprocess.run(pip + ['install', '--index-url', args.index_url, '--no-deps', '--only-binary=:all:',
+                         '--timeout', '15', '--retries', '0', '-c', str(constraints),
+                         '-r', str(ROOT / 'runtime/requirements-ppu-overrides.txt')], env=env, check=True)
+    subprocess.run([str(python), '-c',
+                    'import runpy; runpy.run_path('+repr(str(Path(__file__).resolve()))+
+                    ')["verify_megatron_dependencies"]()'], env=env, check=True)
     # Local packages are installed after their dependencies. No CUDA extras, no
     # isolated build that could download an unrelated official PyTorch wheel.
     subprocess.run(pip + ['install', '--no-deps', '--no-build-isolation', '-e', str(ROOT / 'packages/cosmos-cuda'),
@@ -71,6 +106,10 @@ def main():
         env=env, text=True)
     if json.loads(output) != sdk:
         raise SystemExit('SDK versions changed unexpectedly; do not render with this environment')
+    subprocess.run([str(python), '-c',
+        'import numpy as np, torch; a=np.arange(4,dtype=np.float32); '
+        'assert np.array_equal(torch.from_numpy(a).numpy(),a); '
+        'print("NumPy / Torch CPU array bridge: PASS")'], env=env, check=True)
     freeze = subprocess.check_output(pip + ['freeze', '--local'], env=env, text=True)
     (target / 'requirements-installed.txt').write_text(freeze)
     print('Installation complete. Activate:', target / 'bin/activate')
