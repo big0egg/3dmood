@@ -1,0 +1,36 @@
+schema_version: 1
+name: libero_cosmos25_v1
+input:
+  root: /root/opendatasets/LIBERO_GT_v1_plane_fix
+  cameras: [agentview, robot0_eye_in_hand]
+output:
+  root: /root/opendatasets/LIBERO_REALISM_cosmos25_v1
+  run_dir: ../../runs/realism/cosmos25_libero_v1
+  scratch: /tmp/robot-realism/cosmos25/staging
+runtime:
+  python: /tmp/robot-realism/cosmos25/venv/bin/python
+  cache: /tmp/robot-realism/cosmos25/cache
+  enable_guardrails: true
+  offload_guardrails: true
+generation:
+  controls: [depth]
+  resolution: '720'
+  steps: 35
+  guidance: 3
+  prompt: >-
+    A realistic camera photograph of the same indoor robot manipulation scene.
+    Natural indoor lighting and realistic surface materials. Preserve the same
+    robot, objects, object identities, shapes, positions, camera viewpoint and
+    occlusions. Do not add, remove or move objects.
+  negative_prompt: >-
+    cartoon, illustration, game graphics, distorted objects, additional objects,
+    missing objects, changed viewpoint, changed geometry, text overlay, watermark
+controls:
+  near_m: 0.05
+  far_m: 5.0
+  depth_weight: 1.0
+  edge_weight: 1.0
+  canny_low: 100
+  canny_high: 200
+selection:
+  seed: 20261022

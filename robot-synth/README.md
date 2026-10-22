@@ -283,7 +283,7 @@ python -m robot_synth validate \
   --allow-partial
 
 python -m robot_synth report \
-  --config configs/libero_gt_v1.yaml \
+  --config configs/libero_gt_v1_plane_fix.yaml \
   --max-previews 40
 ```
 
@@ -330,8 +330,8 @@ python -m robot_synth collect \
 **这一步做什么：** 按完整配额检查数据，并重新生成质量报告。
 
 ```bash
-python -m robot_synth validate --config configs/libero_gt_v1.yaml
-python -m robot_synth report --config configs/libero_gt_v1.yaml --max-previews 40
+python -m robot_synth validate --config configs/libero_gt_v1_plane_fix.yaml
+python -m robot_synth report --config configs/libero_gt_v1_plane_fix.yaml --max-previews 40
 ```
 
 最终验收时不加 `--allow-partial`。应同时满足：
