@@ -1,21 +1,26 @@
-# World Scenario Parquet File Structure
+<a id="world-scenario-parquet-file-structure"></a>
 
-This document provides a comprehensive guide to the parquet file structure and requirements for generating world scenario videos using the `generate_control_videos.py` script.
+# 世界场景 Parquet 文件结构
+本文详细介绍使用 `generate_control_videos.py` 脚本生成世界场景视频时，Parquet 文件的结构和要求。
 
-## Overview
+<a id="overview"></a>
 
-The world scenario generation pipeline transforms 3D scene annotations into control videos that condition the Cosmos Transfer auto multiview video generation model. These control videos provide spatial context through HD map visualizations, showing:
+## 概述
+世界场景生成流程将三维场景标注转换为控制视频，为 Cosmos Transfer 自动驾驶多视角视频生成模型提供条件。这些控制视频通过高精地图可视化提供空间上下文，展示以下内容：
 
-- Vehicle and pedestrian bounding boxes
-- Lane lines and boundaries
-- Traffic infrastructure (lights, signs)
-- Road markings and crosswalks
+- 车辆和行人的包围框。
+- 车道线和边界。
+- 交通基础设施，包括信号灯和标志。
+- 道路标记和人行横道。
 
-The pipeline reads scene data from parquet files containing structured annotations and renders them from multiple camera perspectives to create synchronized control videos.
+流程从包含结构化标注的 Parquet 文件读取场景数据，再从多个相机视角进行渲染，生成同步控制视频。
 
-## File Organization
+<a id="file-organization"></a>
 
-### Directory Structure
+## 文件组织
+<a id="directory-structure"></a>
+
+### 目录结构
 ```
 scene_annotations_directory/
 ├── {clip_id}.obstacle.parquet              (required)
@@ -32,49 +37,65 @@ scene_annotations_directory/
 ├── {clip_id}.traffic_sign.parquet          (optional)
 ```
 
-All files must share the same `clip_id` prefix, which represents a unique clip identifier.
+所有文件必须使用相同的 `clip_id` 前缀，该前缀表示唯一的视频片段标识符。
 
-## Coordinate Systems
+<a id="coordinate-systems"></a>
 
-The world scenario generation pipeline uses a consistent coordinate system across all data:
+## 坐标系
+世界场景生成流程对所有数据使用一致的坐标系约定：
 
-### World Coordinate System
-- **Origin**: The ego vehicle's starting position (first frame) defines the world origin (0,0,0)
-- **Convention**: Right-handed coordinate system with:
-  - X: Forward (vehicle direction)
-  - Y: Left
-  - Z: Up
-- Ego motion and obstacle positions use world coordinates
+<a id="world-coordinate-system"></a>
 
-### Vehicle Reference Frame
-- **Vehicle Origin**: Rear axle center at ground level (Z=0)
-- **Camera positions**: Defined *relative* to the rear axle using FLU (Forward-Left-Up) convention
-- **Transformations**: The pipeline chains transformations as world → ego → camera
+### 世界坐标系
+- **原点**：自车的起始位置，即第一帧位置，定义为世界原点 (0,0,0)。
+- **约定**：采用右手坐标系。
+  - X：向前，沿车辆前进方向。
+  - Y：向左。
+  - Z：向上。
+- 自车运动和障碍物位置均使用世界坐标。
 
-### Temporal Alignment
-- **Ego motion**: Typically provided at 10Hz, interpolated to processing frame rate (default: 30 fps, configurable via `INPUT_POSE_FPS` in `scripts/av_utils/render_config.py`)
-- **Obstacles**: Typically provided at 10Hz, interpolated to same processing frame rate as ego motion
-- **Synchronization**: The pipeline automatically interpolates obstacle tracks to align with ego motion timestamps
+<a id="vehicle-reference-frame"></a>
 
-## Data Schema Notes
+### 车辆参考坐标系
+- **车辆原点**：地面高度处的后轴中心，Z=0。
+- **相机位置**：使用 FLU（前、左、上）约定，定义为*相对于*后轴的位置。
+- **变换**：流程按世界 → 自车 → 相机的顺序串联变换。
 
-### Version Field
-All parquet files include a `version` field (uint64) in each row. This field contains a data version number but is **not used by the rendering pipeline**. The rendering code processes all data regardless of version value. In practice, all rows within a scene typically share the same version number.
+<a id="temporal-alignment"></a>
 
-### Unused Fields
-The following fields are present in the parquet schemas but are **not used by the current rendering pipeline**:
-- **key fields**: Only `timestamp_micros` is used from the key structure. Fields like `clip_id`, `label_class_id`, `map_id`, and `map_id_version` are ignored.
-- **category fields**: Traffic sign and road marking categories are loaded but not used for rendering (all rendered the same way).
-- **lane fields**: `map_end`, `vehicle_types`, and `use_types` are not used.
-- **wait_line fields**: `intersection_subtype` is not used.
+### 时间对齐
+- **自车运动**：通常以 10Hz 提供，插值到处理帧率，默认为 30 fps，可通过 `scripts/av_utils/render_config.py` 中的 `INPUT_POSE_FPS` 配置。
+- **障碍物**：通常以 10Hz 提供，插值到与自车运动相同的处理帧率。
+- **同步**：流程自动对障碍物轨迹插值，使其与自车运动时间戳对齐。
 
-## Required Files
+<a id="data-schema-notes"></a>
 
-### 1. Obstacle File (`{clip_id}.obstacle.parquet`)
+## 数据结构说明
+<a id="version-field"></a>
 
-Contains 3D bounding box annotations for dynamic objects (vehicles, pedestrians, cyclists).
+### 版本字段
+所有 Parquet 文件每行都包含 `version` 字段，类型为 uint64。该字段保存数据版本号，但**渲染流程不会使用它**。渲染代码处理所有数据，不受版本值影响。实际数据中，同一场景的所有行通常使用相同版本号。
 
-**Schema:**
+<a id="unused-fields"></a>
+
+### 未使用的字段
+以下字段存在于 Parquet 数据结构中，但**当前渲染流程不会使用**：
+
+- **key 字段**：key 结构中仅使用 `timestamp_micros`，忽略 `clip_id`、`label_class_id`、`map_id` 和 `map_id_version` 等字段。
+- **category 字段**：交通标志和道路标记的类别会被加载，但不参与渲染区分，所有类别均按相同方式渲染。
+- **lane 字段**：不使用 `map_end`、`vehicle_types` 和 `use_types`。
+- **wait_line 字段**：不使用 `intersection_subtype`。
+
+<a id="required-files"></a>
+
+## 必需文件
+<a id="1-obstacle-file-clip_idobstacleparquet"></a>
+
+### 1. 障碍物文件（`{clip_id}.obstacle.parquet`）
+包含动态物体的三维包围框标注，例如车辆、行人和骑行者。
+
+**数据结构：**
+
 ```python
 {
     "key": {
@@ -106,20 +127,23 @@ Contains 3D bounding box annotations for dynamic objects (vehicles, pedestrians,
 }
 ```
 
-**Category Mapping:**
-- `automobile`, `other_vehicle`, `vehicle` → `Car`
-- `person` → `Pedestrian`
-- `rider` → `Cyclist`
-- `bus`, `heavy_truck`, `train_or_tram_car`, `trolley_bus`, `trailer` → `Truck`
-- All other categories (including `stroller`, `protruding_object`, `animal`) → `Others`
+**类别映射：**
 
-Note: The rendering pipeline uses case-insensitive matching.
+- `automobile`、`other_vehicle`、`vehicle` → `Car`。
+- `person` → `Pedestrian`。
+- `rider` → `Cyclist`。
+- `bus`、`heavy_truck`、`train_or_tram_car`、`trolley_bus`、`trailer` → `Truck`。
+- 其他所有类别，包括 `stroller`、`protruding_object`、`animal`，均映射为 `Others`。
 
-### 2. Calibration Estimate File (`{clip_id}.calibration_estimate.parquet`)
+注意：渲染流程进行匹配时不区分大小写。
 
-Contains camera calibration and vehicle sensor configuration data.
+<a id="2-calibration-estimate-file-clip_idcalibration_estimateparquet"></a>
 
-**Schema:**
+### 2. 标定估计文件（`{clip_id}.calibration_estimate.parquet`）
+包含相机标定和车辆传感器配置数据。
+
+**数据结构：**
+
 ```python
 {
     "key": {
@@ -134,12 +158,14 @@ Contains camera calibration and vehicle sensor configuration data.
 }
 ```
 
-**Rig JSON Structure:**
-The `rig_json` field contains a serialized JSON with complete sensor configuration data. In the following sections we will detail the relevant parts. For additional information, please see [DriveWorks rig documentation](https://developer.nvidia.com/docs/drive/drive-os/6.0.8.1/public/driveworks-nvsdk/nvsdk_dw_html/rigconfiguration_usecase0.html).
+**Rig JSON 结构：**
 
-### Camera Intrinsic Parameters (FTheta Model)
+`rig_json` 字段包含序列化的 JSON，其中保存完整传感器配置。下文详细说明相关部分。更多信息请参阅 [DriveWorks rig 文档](https://developer.nvidia.com/docs/drive/drive-os/6.0.8.1/public/driveworks-nvsdk/nvsdk_dw_html/rigconfiguration_usecase0.html)。
 
-The system uses the **FTheta camera model**, which maps pixel distance from the optical center to ray angle. Each camera's intrinsics are stored in the `properties` field:
+<a id="camera-intrinsic-parameters-ftheta-model"></a>
+
+### 相机内参（FTheta 模型）
+系统使用 **FTheta 相机模型**，将像素到光学中心的距离映射为光线角度。每个相机的内参保存在 `properties` 字段中：
 
 ```jsonc
 {
@@ -156,21 +182,23 @@ The system uses the **FTheta camera model**, which maps pixel distance from the 
 }
 ```
 
-**Parameter Meanings:**
-- **cx, cy**: Principal point (optical center) in pixel coordinates
-- **width, height**: Image dimensions in pixels
-- **polynomial**: Up to 6 coefficients [k0, k1, k2, k3, k4, k5] for the distortion model
-  - For "pixeldistance-to-angle": θ = k0 + k1*r + k2*r² + k3*r³ + k4*r⁴ + k5*r⁵
-  - Where r is the pixel distance from (cx, cy) and θ is the ray angle in radians
-- **polynomial-type**:
-  - `"pixeldistance-to-angle"`: Maps pixel radius to viewing angle (backward polynomial)
-  - `"angle-to-pixeldistance"`: Maps viewing angle to pixel radius (forward polynomial)
-- **linear-c, linear-d, linear-e**: Additional linear correction factors
-  - Default values if not specified: c=1.0, d=0.0, e=0.0
+**参数含义：**
 
-### Camera Extrinsic Parameters
+- **cx、cy**：主点，即光学中心的像素坐标。
+- **width、height**：图像宽高，单位为像素。
+- **polynomial**：畸变模型最多 6 个系数 [k0, k1, k2, k3, k4, k5]。
+  - 对于 "pixeldistance-to-angle"：θ = k0 + k1*r + k2*r² + k3*r³ + k4*r⁴ + k5*r⁵。
+  - 其中 r 为像素到 (cx, cy) 的距离，θ 为光线角度，单位为弧度。
+- **polynomial-type**：
+  - `"pixeldistance-to-angle"`：将像素半径映射为观察角度，即反向多项式。
+  - `"angle-to-pixeldistance"`：将观察角度映射为像素半径，即正向多项式。
+- **linear-c、linear-d、linear-e**：附加线性校正系数。
+  - 未指定时，默认 c=1.0、d=0.0、e=0.0。
 
-Each camera's pose relative to the vehicle is defined by the `nominalSensor2Rig_FLU` field:
+<a id="camera-extrinsic-parameters"></a>
+
+### 相机外参
+各相机相对于车辆的位姿由 `nominalSensor2Rig_FLU` 字段定义：
 
 ```jsonc
 {
@@ -181,18 +209,20 @@ Each camera's pose relative to the vehicle is defined by the `nominalSensor2Rig_
 }
 ```
 
-**Coordinate System:**
-- **FLU Convention**: Forward-Left-Up coordinate system
-  - X: Forward (vehicle direction)
-  - Y: Left
-  - Z: Up
-- **Vehicle Origin**: Rear axle center at ground level (Z=0)
-- **Translation**: Camera position relative to the rear axle on the ground
-- **Rotation**: Euler angles applied in roll-pitch-yaw order
+**坐标系：**
 
-### Calibration Corrections
+- **FLU 约定**：前、左、上坐标系。
+  - X：向前，沿车辆前进方向。
+  - Y：向左。
+  - Z：向上。
+- **车辆原点**：地面高度处的后轴中心，Z=0。
+- **平移**：相机相对于地面后轴中心的位置。
+- **旋转**：按横滚、俯仰、偏航顺序应用的欧拉角。
 
-The system may also include dynamic corrections applied during calibration:
+<a id="calibration-corrections"></a>
+
+### 标定修正
+系统也可能包含在标定过程中应用的动态修正：
 
 ```jsonc
 {
@@ -203,29 +233,33 @@ The system may also include dynamic corrections applied during calibration:
 }
 ```
 
-These corrections are applied on top of the nominal transforms to account for mounting tolerances and calibration refinements.
+这些修正在标称变换的基础上应用，用于补偿安装公差和进一步的标定调整。
 
-### Supported Cameras
+<a id="supported-cameras"></a>
 
-The following camera configurations are typically available:
-- `camera:front:wide:120fov` - Wide-angle front camera (120° FOV)
-- `camera:front:tele:30fov` - Telephoto front camera (30° FOV)
-- `camera:front:tele:sat:30fov` - Secondary telephoto front camera
-- `camera:cross:left:120fov` - Left cross-traffic camera (120° FOV)
-- `camera:cross:right:120fov` - Right cross-traffic camera (120° FOV)
-- `camera:rear:left:70fov` - Rear left camera (70° FOV)
-- `camera:rear:right:70fov` - Rear right camera (70° FOV)
-- `camera:rear:tele:30fov` - Telephoto rear camera (30° FOV)
+### 支持的相机
+通常提供以下相机配置：
 
-**Note on Camera Flexibility**: While these camera names are fixed in the system, you can provide custom intrinsic and extrinsic parameters for each camera. For example, a camera named `camera:front:wide:120fov` is not restricted to exactly 120° field of view - you can modify the polynomial coefficients, principal point, and camera pose to match your actual hardware. However, best results are expected when camera configurations don't deviate too far from the training data specifications.
+- `camera:front:wide:120fov`：前向广角相机，视场角 120°。
+- `camera:front:tele:30fov`：前向长焦相机，视场角 30°。
+- `camera:front:tele:sat:30fov`：第二个前向长焦相机。
+- `camera:cross:left:120fov`：左侧横向交通相机，视场角 120°。
+- `camera:cross:right:120fov`：右侧横向交通相机，视场角 120°。
+- `camera:rear:left:70fov`：左后方相机，视场角 70°。
+- `camera:rear:right:70fov`：右后方相机，视场角 70°。
+- `camera:rear:tele:30fov`：后向长焦相机，视场角 30°。
 
-### Modifying Calibration Data
+**相机配置的灵活性：**虽然系统中的相机名称固定，但可以为每个相机提供自定义内参和外参。例如，名为 `camera:front:wide:120fov` 的相机并不局限于恰好 120° 的视场角；可以修改多项式系数、主点和相机位姿，以匹配实际硬件。不过，相机配置与训练数据规范偏差较小时，通常更容易获得理想效果。
 
-To use your own camera calibration with the world scenario generation pipeline:
+<a id="modifying-calibration-data"></a>
 
-#### 1. Extract Template from Example Data
+### 修改标定数据
+在世界场景生成流程中使用自有相机标定时，请按以下步骤操作：
 
-First, extract the rig JSON from an example calibration file:
+<a id="1-extract-template-from-example-data"></a>
+
+#### 1. 从示例数据提取模板
+首先，从示例标定文件中提取 rig JSON：
 
 ```python
 import pandas as pd
@@ -240,9 +274,10 @@ with open('my_rig.json', 'w') as f:
     json.dump(rig_json, f, indent=2)
 ```
 
-#### 2. Locate Camera Parameters
+<a id="2-locate-camera-parameters"></a>
 
-Within the rig JSON, find your target camera in the `sensors` array. Each camera entry contains:
+#### 2. 定位相机参数
+在 rig JSON 的 `sensors` 数组中找到目标相机。每个相机条目包含：
 
 ```jsonc
 {
@@ -269,29 +304,34 @@ Within the rig JSON, find your target camera in the `sensors` array. Each camera
 }
 ```
 
-#### 3. Modify Calibration Values
+<a id="3-modify-calibration-values"></a>
 
-**For intrinsics** (in `properties`):
-- Update `cx`, `cy` with your principal point
-- Update `width`, `height` with your image dimensions
-- Replace `polynomial` coefficients with your distortion model coefficients
-- Set `polynomial-type` to match your model:
-  - `"pixeldistance-to-angle"` for backward polynomial (pixel → angle)
-  - `"angle-to-pixeldistance"` for forward polynomial (angle → pixel)
-- Set `linear-c`, `linear-d`, `linear-e` to your linear correction factors (defaults: 1.0, 0.0, 0.0)
+#### 3. 修改标定值
+**内参**位于 `properties` 中：
 
-**For extrinsics** (in `nominalSensor2Rig_FLU`):
-- Update `t` with your camera position [x, y, z] in meters
-- Update `roll-pitch-yaw` with your camera rotation in degrees
+- 将 `cx`、`cy` 更新为实际主点坐标。
+- 将 `width`、`height` 更新为实际图像尺寸。
+- 将 `polynomial` 系数替换为实际畸变模型系数。
+- 设置 `polynomial-type`，与所用模型一致：
+  - `"pixeldistance-to-angle"`：反向多项式，像素 → 角度。
+  - `"angle-to-pixeldistance"`：正向多项式，角度 → 像素。
+- 将 `linear-c`、`linear-d`、`linear-e` 设置为实际线性校正系数，默认值分别为 1.0、0.0、0.0。
 
-**To remove calibration corrections** (if starting fresh):
+**外参**位于 `nominalSensor2Rig_FLU` 中：
+
+- 将 `t` 更新为实际相机位置 [x, y, z]，单位为米。
+- 将 `roll-pitch-yaw` 更新为实际相机旋转，单位为度。
+
+**如果从头标定，可移除原有标定修正：**
+
 ```jsonc
 "correction_sensor_R_FLU": {"roll-pitch-yaw": [0.0, 0.0, 0.0]},
 "correction_rig_T": [0.0, 0.0, 0.0]
 ```
 
-#### 4. Create New Calibration Parquet
+<a id="4-create-new-calibration-parquet"></a>
 
+#### 4. 创建新的标定 Parquet 文件
 ```python
 # Create calibration dataframe
 calibration_data = {
@@ -307,19 +347,21 @@ df = pd.DataFrame([calibration_data])
 df.to_parquet('your_clip_id.calibration_estimate.parquet')
 ```
 
-#### 5. Important Notes
+<a id="5-important-notes"></a>
 
+#### 5. 重要说明
+- **最低结构要求**：生成世界场景时，只需要：
+  - `sensors` 数组中的相机条目，包含有效的 `name`、`properties` 和 `nominalSensor2Rig_FLU`。
+  - 外层 rig JSON 结构。
+  - 若不需要，其他传感器（IMU、GPS 等）可以省略。
 
-- **Minimal required structure**: For world scenario generation, you only need:
-  - Camera entries in the `sensors` array with proper `name`, `properties`, and `nominalSensor2Rig_FLU`
-  - The wrapping rig JSON structure
-  - Other sensors (IMU, GPS, etc.) can be omitted if not needed
+<a id="3-egomotion-estimate-file-clip_idegomotion_estimateparquet"></a>
 
-### 3. Egomotion Estimate File (`{clip_id}.egomotion_estimate.parquet`)
+### 3. 自车运动估计文件（`{clip_id}.egomotion_estimate.parquet`）
+包含车辆轨迹数据，即随时间变化的位置和朝向。
 
-Contains vehicle trajectory data (position and orientation over time).
+**数据结构：**
 
-**Schema:**
 ```python
 {
     "key": {
@@ -344,15 +386,18 @@ Contains vehicle trajectory data (position and orientation over time).
 }
 ```
 
-## Optional Map Files
+<a id="optional-map-files"></a>
 
-These files enhance the visualization with static map elements. Each follows a similar structure with different geometry types.
+## 可选地图文件
+这些文件通过静态地图元素丰富可视化效果。它们具有相似结构，但使用不同的几何类型。
 
-### Lane File (`{clip_id}.lane.parquet`)
+<a id="lane-file-clip_idlaneparquet"></a>
 
-Lane boundaries for driving lanes.
+### 车道文件（`{clip_id}.lane.parquet`）
+表示行驶车道的边界。
 
-**Schema:**
+**数据结构：**
+
 ```python
 {
     "key": {
@@ -376,11 +421,13 @@ Lane boundaries for driving lanes.
 }
 ```
 
-### Lane Line File (`{clip_id}.lane_line.parquet`)
+<a id="lane-line-file-clip_idlane_lineparquet"></a>
 
-Individual lane markings (center lines, edge lines).
+### 车道线文件（`{clip_id}.lane_line.parquet`）
+表示独立的车道标线，例如中心线、边缘线。
 
-**Schema:**
+**数据结构：**
+
 ```python
 {
     "key": {...},  # Same structure as lane file
@@ -395,16 +442,19 @@ Individual lane markings (center lines, edge lines).
 }
 ```
 
-**Style Types:**
-- `SOLID_SINGLE`, `SOLID_DOUBLE`
-- `DASHED_SINGLE`, `LONG_DASHED_SINGLE`
-- `VIRTUAL` (not rendered)
+**样式类型：**
 
-### Road Boundary File (`{clip_id}.road_boundary.parquet`)
+- `SOLID_SINGLE`、`SOLID_DOUBLE`。
+- `DASHED_SINGLE`、`LONG_DASHED_SINGLE`。
+- `VIRTUAL`，不渲染。
 
-Physical road boundaries (curbs, barriers).
+<a id="road-boundary-file-clip_idroad_boundaryparquet"></a>
 
-**Schema:**
+### 道路边界文件（`{clip_id}.road_boundary.parquet`）
+表示物理道路边界，例如路缘、隔离设施。
+
+**数据结构：**
+
 ```python
 {
     "key": {...},  # Same structure as lane file
@@ -416,11 +466,13 @@ Physical road boundaries (curbs, barriers).
 }
 ```
 
-### Crosswalk File (`{clip_id}.crosswalk.parquet`)
+<a id="crosswalk-file-clip_idcrosswalkparquet"></a>
 
-Pedestrian crossing areas.
+### 人行横道文件（`{clip_id}.crosswalk.parquet`）
+表示供行人穿越道路的区域。
 
-**Schema:**
+**数据结构：**
+
 ```python
 {
     "key": {...},  # Same structure as lane file
@@ -432,13 +484,15 @@ Pedestrian crossing areas.
 }
 ```
 
-### Traffic Light File (`{clip_id}.traffic_light.parquet`)
+<a id="traffic-light-file-clip_idtraffic_lightparquet"></a>
 
-Traffic light positions and orientations.
+### 交通信号灯文件（`{clip_id}.traffic_light.parquet`）
+表示交通信号灯的位置和朝向。
 
-**Note:** The current parquet format does NOT include traffic light state information (red/yellow/green). While the rendering code has infrastructure to support different traffic light colors based on state, all traffic lights are currently rendered in a uniform gray color ("unknown" state) because state data is not available in the parquet files.
+**注意：**当前 Parquet 格式**不包含**交通信号灯状态信息，即红、黄、绿灯状态。虽然渲染代码具备根据状态显示不同颜色的能力，但由于 Parquet 文件中没有状态数据，目前所有交通信号灯均渲染为统一的灰色，表示“未知”状态。
 
-**Schema:**
+**数据结构：**
+
 ```python
 {
     "key": {...},  # Same structure as lane file
@@ -452,18 +506,21 @@ Traffic light positions and orientations.
 }
 ```
 
-### Traffic Sign File (`{clip_id}.traffic_sign.parquet`)
+<a id="traffic-sign-file-clip_idtraffic_signparquet"></a>
 
-Road signs and information boards.
+### 交通标志文件（`{clip_id}.traffic_sign.parquet`）
+表示道路标志和信息牌。
 
-**Common categories include:**
-- Regulatory signs: `TRAFFIC_SIGN_REGULATORY_R1_STOP`, `R1_YIELD`, `R2_SPEED_LIMIT`, `R3_NO_RIGHT_TURN`, etc.
-- Warning signs: `TRAFFIC_SIGN_WARNING_W11_PEDESTRAIN_CROSSING`, `W3_STOP_AHEAD`, `W4_MERGE`, etc.
-- School signs: `TRAFFIC_SIGN_SCHOOL_S1_SCHOOL`
-- Information signs: `TRAFFIC_SIGN_INFORMATION`
-- Destination/distance signs: `TRAFFIC_SIGN_DESTINATION_DISTANCE_D11_BIKE_ROUTE`
+**常见类别包括：**
 
-**Schema:**
+- 管制标志：`TRAFFIC_SIGN_REGULATORY_R1_STOP`、`R1_YIELD`、`R2_SPEED_LIMIT`、`R3_NO_RIGHT_TURN` 等。
+- 警告标志：`TRAFFIC_SIGN_WARNING_W11_PEDESTRAIN_CROSSING`、`W3_STOP_AHEAD`、`W4_MERGE` 等。
+- 学校标志：`TRAFFIC_SIGN_SCHOOL_S1_SCHOOL`。
+- 信息标志：`TRAFFIC_SIGN_INFORMATION`。
+- 目的地／距离标志：`TRAFFIC_SIGN_DESTINATION_DISTANCE_D11_BIKE_ROUTE`。
+
+**数据结构：**
+
 ```python
 {
     "key": {...},  # Same structure as lane file
@@ -477,13 +534,16 @@ Road signs and information boards.
 }
 ```
 
-### Additional Map Elements
+<a id="additional-map-elements"></a>
 
-**Pole File** (`pole.parquet`): Vertical structures
-- Example categories: `LIGHT`, `SIGN`, `TEL`, `TREE`, `SENTRY`, `UNKNOWN`
-- Contains base and top positions as 2-point line segments
+### 其他地图元素
+**杆体文件**（`pole.parquet`）：竖直结构。
 
-**Schema:**
+- 类别示例：`LIGHT`、`SIGN`、`TEL`、`TREE`、`SENTRY`、`UNKNOWN`。
+- 以两个端点组成的线段保存底部和顶部位置。
+
+**数据结构：**
+
 ```python
 {
     "key": {...},  # Same structure as lane file (no fields used)
@@ -495,17 +555,19 @@ Road signs and information boards.
 }
 ```
 
-**Road Marking File** (`road_marking.parquet`): Painted road markings
-- Example categories:
-  - `ROI_POLYGON_ROAD_MARKING_STOP` - Stop line markings
-  - `ROI_POLYGON_ROAD_MARKING_PED_XING` - Pedestrian crossing markings
-  - `ROI_POLYGON_BIKE_PAINT` - Bike lane markings
-  - `ROI_POLYGON_DIRECTION_PAINT_LEFT`, `_RIGHT`, `_FORWARD` - Directional arrows
-  - `ROI_POLYGON_SPEED_LIMIT_PAINT_25` - Speed limit markings
-  - `ROI_POLYGON_TEXT_PAINT` - General text markings
-- Stored as polygons
+**道路标记文件**（`road_marking.parquet`）：绘制在路面的标记。
 
-**Schema:**
+- 类别示例：
+  - `ROI_POLYGON_ROAD_MARKING_STOP`：停止线标记。
+  - `ROI_POLYGON_ROAD_MARKING_PED_XING`：人行横道标记。
+  - `ROI_POLYGON_BIKE_PAINT`：自行车道标记。
+  - `ROI_POLYGON_DIRECTION_PAINT_LEFT`、`_RIGHT`、`_FORWARD`：方向箭头。
+  - `ROI_POLYGON_SPEED_LIMIT_PAINT_25`：限速标记。
+  - `ROI_POLYGON_TEXT_PAINT`：通用文字标记。
+- 使用多边形保存。
+
+**数据结构：**
+
 ```python
 {
     "key": {...},  # Same structure as lane file (no fields used)
@@ -517,9 +579,10 @@ Road signs and information boards.
 }
 ```
 
-**Wait Line File** (`wait_line.parquet`): Stop lines at intersections
+**停止线文件**（`wait_line.parquet`）：交叉路口的停止线。
 
-**Schema:**
+**数据结构：**
+
 ```python
 {
     "key": {...},  # Same structure as lane file

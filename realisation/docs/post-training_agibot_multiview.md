@@ -1,48 +1,54 @@
-# Agibot Multiview Post-training
+<a id="agibot-multiview-post-training"></a>
 
-> **⚠️ Note**
-> The model and features described in this document are currently **internal-only** and are not publicly accessible. This includes all referenced checkpoints (e.g., `Cosmos-Transfer2.5-2B/robot-multiview-control`).
+# Agibot 多视角后训练
+> **⚠️ 注意**
+> 本文介绍的模型和功能目前**仅限内部使用**，尚未公开。这包括文中引用的所有检查点，例如 `Cosmos-Transfer2.5-2B/robot-multiview-control`。
 >
-> As a result, the instructions in this guide cannot be executed outside of NVIDIA at this time. We may make these models available in the future. This document will be updated accordingly if that changes.
+> 因此，目前无法在 NVIDIA 外部执行本指南中的步骤。未来可能会开放这些模型；如有变化，本文将相应更新。
 
-This guide covers post-training the Cosmos-Transfer2.5 Agibot 3-view control models (head_color, hand_left, hand_right) with edge, depth, seg, or vis control using your own local data.
+本指南介绍如何使用本地数据，对 Cosmos-Transfer2.5 Agibot 三视角控制模型（head_color、hand_left、hand_right）进行后训练，支持 edge、depth、seg 或 vis 控制。
 
-## Table of Contents
+<a id="table-of-contents"></a>
+
+## 目录
+<!--TOC-->
+
+- [目录](#table-of-contents)
+- [前置条件](#prerequisites)
+- [1. 准备数据](#1-preparing-data)
+  - [1.1 数据集布局](#11-dataset-layout)
+  - [1.2 布局示例](#12-example-layout)
+  - [1.3 用于准备后训练数据的示例数据集](#13-example-dataset-for-preparing-post-train-data)
+- [2. 后训练](#2-post-training)
+  - [2.1 环境变量](#21-environment-variables)
+  - [2.2 运行命令](#22-run-command)
+  - [2.3 覆盖训练超参数](#23-overriding-training-hyperparameters)
+- [3. 另请参阅](#3-see-also)
 
 <!--TOC-->
 
-- [Table of Contents](#table-of-contents)
-- [Prerequisites](#prerequisites)
-- [1. Preparing Data](#1-preparing-data)
-  - [1.1 Dataset layout](#11-dataset-layout)
-  - [1.2 Example layout](#12-example-layout)
-  - [1.3 Example dataset for preparing post-train data](#13-example-dataset-for-preparing-post-train-data)
-- [2. Post-training](#2-post-training)
-  - [2.1 Environment variables](#21-environment-variables)
-  - [2.2 Run command](#22-run-command)
-  - [2.3 Overriding training hyperparameters](#23-overriding-training-hyperparameters)
-- [3. See also](#3-see-also)
+<a id="prerequisites"></a>
 
-<!--TOC-->
+## 前置条件
+开始前，请阅读[后训练指南](./post-training.md)，了解环境配置、Hugging Face 配置和检查点管理。此外：
 
-## Prerequisites
+- 设置 `COSMOS_EXPERIMENTAL_CHECKPOINTS=1`，以便正确解析基础检查点位置（例如，在非内部环境中从 Hugging Face 获取）。若未设置，训练会**从头开始**，而不会加载预训练检查点。
 
-Before proceeding, read the [Post-training Guide](./post-training.md) for environment setup, Hugging Face configuration, and checkpointing. In addition:
+<a id="1-preparing-data"></a>
 
-- Set `COSMOS_EXPERIMENTAL_CHECKPOINTS=1` so base checkpoints resolve (e.g. from Hugging Face when not internal). Without this, the run will **train from scratch** instead of loading the pre-trained checkpoint.
+## 1. 准备数据
+<a id="11-dataset-layout"></a>
 
-## 1. Preparing Data
+### 1.1 数据集布局
+使用一个目录存放以下内容：
 
-### 1.1 Dataset layout
+- **视频：**`videos/head_color/*.mp4`、`videos/hand_left/*.mp4`、`videos/hand_right/*.mp4`。不同视角使用相同的样本 ID，例如 `episode_000000.mp4`。
+- **描述文本：**`captions/head_color/*.json`、`captions/hand_left/*.json`、`captions/hand_right/*.json`。每个 JSON 必须包含 `{"caption": "..."}`。`head_color` 的描述文本用作训练提示词，其他视角可以共享或复制该描述。如有需要，可使用 `scripts/write_agibot_captions.py` 生成占位描述文本。
+- **控制信号（可选）：**仅对 **depth** 或 **seg** 控制，需要添加 `control_input_depth/` 或 `control_input_seg/`，其视角子目录和 `.mp4` 文件布局与视频相同，文件主名与 `videos/` 中对应文件一致。对于 **edge** 或 **vis**，控制信号在运行时根据视频计算。
 
-Use a single directory containing:
+<a id="12-example-layout"></a>
 
-- **Videos:** `videos/head_color/*.mp4`, `videos/hand_left/*.mp4`, `videos/hand_right/*.mp4` (same sample IDs across views, e.g. `episode_000000.mp4`).
-- **Captions:** `captions/head_color/*.json`, `captions/hand_left/*.json`, `captions/hand_right/*.json`. Each JSON must have `{"caption": "..."}`. The caption for `head_color` is used as the training prompt; other views can share or duplicate. Use `scripts/write_agibot_captions.py` to generate placeholder captions if needed.
-- **Control (optional):** For **depth** or **seg** control only, add `control_input_depth/` or `control_input_seg/` with the same view subdirs and `.mp4` files (same stems as in `videos/`). For **edge** or **vis**, control is derived from the video at runtime.
-
-### 1.2 Example layout
-
+### 1.2 布局示例
 ```
 your_dataset/
 ├── captions/
@@ -67,26 +73,30 @@ your_dataset/
     └── hand_right/
 ```
 
-### 1.3 Example dataset for preparing post-train data
+<a id="13-example-dataset-for-preparing-post-train-data"></a>
 
-The repository includes an example layout at **`assets/robot_multiview_control_posttrain-agibot`** (when using the Cosmos-Assets dataset). You can use it as a reference for preparing your own post-train data:
+### 1.3 用于准备后训练数据的示例数据集
+使用 Cosmos-Assets 数据集时，仓库在 **`assets/robot_multiview_control_posttrain-agibot`** 提供了布局示例，可作为准备自有后训练数据的参考：
 
-- **videos/** — 3-view videos (head_color, hand_left, hand_right) with matching sample IDs.
-- **captions/** — Per-view caption JSONs (`{"caption": "..."}`); head_color caption is used as the training prompt.
-- **control_input_depth/** and **control_input_seg/** — Optional pre-computed control videos for depth and seg experiments (same view structure and stems as `videos/`).
+- **videos/**：三视角视频（head_color、hand_left、hand_right），样本 ID 相互对应。
+- **captions/**：每个视角的描述文本 JSON（`{"caption": "..."}`）；head_color 的描述文本用作训练提示词。
+- **control_input_depth/** 和 **control_input_seg/**：可选的预计算 depth 和 seg 控制视频，其视角结构与文件主名均与 `videos/` 一致。
 
-For **edge** and **vis**, control is computed from the video at runtime, so no control folders are required. The docs test script `tests/docs_test/post-training_agibot_multiview.sh` runs post-train for all four control types using this dataset.
+对于 **edge** 和 **vis**，控制信号在运行时根据视频计算，因此不需要控制信号目录。文档测试脚本 `tests/docs_test/post-training_agibot_multiview.sh` 使用此数据集运行全部四种控制类型的后训练。
 
-## 2. Post-training
+<a id="2-post-training"></a>
 
-### 2.1 Environment variables
+## 2. 后训练
+<a id="21-environment-variables"></a>
 
+### 2.1 环境变量
 ```bash
 export COSMOS_EXPERIMENTAL_CHECKPOINTS=1
 ```
 
-### 2.2 Run command
+<a id="22-run-command"></a>
 
+### 2.2 运行命令
 ```shell exclude=true
 torchrun --nproc_per_node=8 --master_port=12345 -m scripts.train \
   --config=cosmos_transfer2/_src/transfer2_multiview/configs/vid2vid_transfer/config.py \
@@ -97,27 +107,28 @@ torchrun --nproc_per_node=8 --master_port=12345 -m scripts.train \
   job.wandb_mode=disabled
 ```
 
-Replace `/path/to/your/dataset` with your actual dataset directory (the example command set it to `assets/robot_multiview_control_posttrain-agibot`).
+将 `/path/to/your/dataset` 替换为实际数据集目录（示例命令将其设置为 `assets/robot_multiview_control_posttrain-agibot`）。
 
-- **Experiments:** Use `transfer2_agibot_posttrain_edge_example`, `transfer2_agibot_posttrain_depth_example`, `transfer2_agibot_posttrain_seg_example`, or `transfer2_agibot_posttrain_vis_example` for the desired control type.
-- **Dataset path:** Set `dataloader_train.dataset.dataset_dir` to your dataset directory (absolute or relative to cwd). Do not use the literal `datasets/your_dataset` unless that folder exists.
-- **Sampler:** `'dataloader_train.sampler.dataset=${dataloader_train.dataset}'` keeps the sampler pointing at the overridden dataset.
-- **GPUs:** Set `--nproc_per_node` to your number of GPUs (e.g. 4 or 8).
+- **实验配置：**根据需要的控制类型，使用 `transfer2_agibot_posttrain_edge_example`、`transfer2_agibot_posttrain_depth_example`、`transfer2_agibot_posttrain_seg_example` 或 `transfer2_agibot_posttrain_vis_example`。
+- **数据集路径：**将 `dataloader_train.dataset.dataset_dir` 设置为实际数据集目录，可以是绝对路径，也可以是相对于当前工作目录的路径。除非该目录确实存在，否则不要直接使用字面路径 `datasets/your_dataset`。
+- **采样器：**`'dataloader_train.sampler.dataset=${dataloader_train.dataset}'` 确保采样器指向覆盖后的数据集。
+- **GPU：**将 `--nproc_per_node` 设置为 GPU 数量，例如 4 或 8。
 
-### 2.3 Overriding training hyperparameters
+<a id="23-overriding-training-hyperparameters"></a>
 
-Override any of these from the command line (same `--` block as above):
+### 2.3 覆盖训练超参数
+可以在命令行中覆盖以下任意参数，与上面的参数放在同一个 `--` 参数块之后：
 
-| Param | Override key | Example | Default (post-train) |
+| 参数 | 覆盖键 | 示例 | 后训练默认值 |
 |-------|--------------|---------|----------------------|
-| Max iterations | `trainer.max_iter` | `trainer.max_iter=30000` | 5_000 |
-| Logging interval | `trainer.logging_iter` | `trainer.logging_iter=100` | 50 |
-| Learning rate | `optimizer.lr` | `optimizer.lr=1e-4` | 5e-5 (from base) |
-| Checkpoint save interval | `checkpoint.save_iter` | `checkpoint.save_iter=1000` | 500 |
-| LR warm-up steps | `scheduler.warm_up_steps` | `scheduler.warm_up_steps=[500]` | [1000] (from base) |
-| LR cycle length | `scheduler.cycle_lengths` | `scheduler.cycle_lengths=[10000]` | [400000] (from base) |
+| 最大迭代次数 | `trainer.max_iter` | `trainer.max_iter=30000` | 5_000 |
+| 日志记录间隔 | `trainer.logging_iter` | `trainer.logging_iter=100` | 50 |
+| 学习率 | `optimizer.lr` | `optimizer.lr=1e-4` | 5e-5（来自基础配置） |
+| 检查点保存间隔 | `checkpoint.save_iter` | `checkpoint.save_iter=1000` | 500 |
+| 学习率预热步数 | `scheduler.warm_up_steps` | `scheduler.warm_up_steps=[500]` | [1000]（来自基础配置） |
+| 学习率周期长度 | `scheduler.cycle_lengths` | `scheduler.cycle_lengths=[10000]` | [400000]（来自基础配置） |
 
-Example with custom lr and iterations:
+自定义学习率和迭代次数的示例：
 
 ```shell exclude=true
 torchrun --nproc_per_node=8 -m scripts.train \
@@ -131,7 +142,8 @@ torchrun --nproc_per_node=8 -m scripts.train \
   job.wandb_mode=disabled
 ```
 
-## 3. See also
+<a id="3-see-also"></a>
 
-- [Inference: Robot multiview control (Agibot)](./inference_robot_multiview_control.md) for running inference with the same models.
-- [Post-training Guide](./post-training.md) for general setup and checkpointing.
+## 3. 另请参阅
+- [推理：机器人多视角控制（Agibot）](./inference_robot_multiview_control.md)：使用相同模型进行推理。
+- [后训练指南](./post-training.md)：通用配置与检查点管理。

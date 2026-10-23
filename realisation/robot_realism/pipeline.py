@@ -16,7 +16,9 @@ def worker_env(config):
     env = os.environ.copy()
     if env.get('COSMOS_SMOKE', '').lower() in ('1', 'true', 'yes', 'y'):
         raise ValueError('COSMOS_SMOKE disables checkpoint loading; it is forbidden for dataset generation')
-    env.update(COSMOS_SMOKE='0', COSMOS_TRAINING='0', COSMOS_INTERNAL='0',
+    # Inference configs also import trainer definitions and LazyConfig.
+    # This enables those shared components; the worker only runs inference.
+    env.update(COSMOS_SMOKE='0', COSMOS_TRAINING='1', COSMOS_INTERNAL='0',
                HF_HOME=str(Path(config['runtime']['cache']) / 'huggingface'),
                HF_HUB_CACHE=str(Path(config['runtime']['cache']) / 'huggingface/hub'),
                TORCH_HOME=str(Path(config['runtime']['cache']) / 'torch'),

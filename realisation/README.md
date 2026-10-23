@@ -30,7 +30,7 @@ df -h /mnt/workspace /tmp /root
 
 复制下面的完整命令。它会使用当前实例的 PPU 专用源，将项目依赖安装到单独的环境中。地址中的 `pg1-pip` 使用数字 `1`。
 
-安装器会自动安装运行依赖，以及本地源码安装需要的 `hatchling`、`editables`。已有环境可以直接重复执行，已安装的包会复用。
+安装器会自动安装 NumPy 2.2.6、兼容 NumPy 2 的 scikit-learn、视频解码库 `decord`、几何处理库 `Shapely` 等运行依赖，以及本地源码安装需要的 `hatchling`、`editables`。已有环境可以直接重复执行，已安装且满足版本要求的包会复用。
 
 ```bash
 NO_PROXY="${NO_PROXY:+$NO_PROXY,}aiext-pypi.mirrors.aliyuncs.com" \
@@ -39,7 +39,11 @@ no_proxy="${no_proxy:+$no_proxy,}aiext-pypi.mirrors.aliyuncs.com" \
   --index-url https://aiext-pypi.mirrors.aliyuncs.com/pg1-pip/ubuntu_cu130/simple/
 ```
 
-**完成标志：** 最后显示 `NumPy / Torch CPU array bridge: PASS` 和 `Installation complete`。
+安装器会在结束前核对依赖版本，检查视频解码、几何处理、文本处理和推理入口，并加载实际使用的模型配置、解析模型组件。检查不下载模型、不加载权重、不生成图片；全部通过后才显示安装完成。
+
+**完成标志：** 检查结果中显示 `"ready": true`，最后显示 `NumPy / Torch CPU array bridge: PASS` 和 `Installation complete`，然后进入第 3 步。
+
+程序启动渲染进程时会自动设置 `COSMOS_TRAINING=1`，让推理配置能够加载所需的公共组件；实际执行的仍是图片生成。
 
 ## 第 3 步：激活环境
 
@@ -114,23 +118,25 @@ export TRANSFORMERS_OFFLINE=1
 - [Cosmos-Predict2.5-2B](https://huggingface.co/nvidia/Cosmos-Predict2.5-2B)
 - [Cosmos-Guardrail1](https://huggingface.co/nvidia/Cosmos-Guardrail1)
 
-然后在[同一账号的 Token 页面](https://huggingface.co/settings/tokens)创建用于这些模型下载的读取 Token。在已完成第 3 步的终端执行：
+然后在[同一账号的 Token 页面](https://huggingface.co/settings/tokens)创建用于这些模型下载的读取 Token。在已完成第 3 步的终端执行下面的命令，粘贴 Token 后按回车；输入不会显示：
 
 ```bash
 unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE HF_HUB_DISABLE_IMPLICIT_TOKEN
-HF_ENDPOINT=https://huggingface.co hf auth login
+read -rsp '请输入 Hugging Face 读取 Token（输入不显示）: ' HF_TOKEN
+printf '\n'
+export HF_TOKEN
 ```
 
-按提示输入 Token；确认登录成功。**命令行登录不会代替网页上的协议确认。** 未获准访问对应仓库、Token 权限不足或仍在等待审核时，自动下载可能被 `401/403` 或 `GatedRepoError` 阻止。访问授权流程见 [Hugging Face 官方说明](https://huggingface.co/docs/hub/models-gated)。
+下载库会自动读取 `HF_TOKEN`，无需先执行命令行登录；输入 Token 时不会连接官网进行账号验证。本方式仅对当前终端及其启动的程序生效。**网页上的协议确认仍需提前完成。** 未获准访问对应仓库、Token 权限不足或仍在等待审核时，自动下载可能被 `401/403` 或 `GatedRepoError` 阻止。参见 [Token 环境变量说明](https://huggingface.co/docs/huggingface_hub/v0.36.0/package_reference/environment_variables#hftoken)和[模型授权说明](https://huggingface.co/docs/hub/models-gated)。
 
-**从官方站点自动下载：** 登录后执行：
+**从官方站点自动下载：** 输入 Token 后执行：
 
 ```bash
 export HF_ENDPOINT=https://huggingface.co
 unset HF_HUB_DISABLE_XET
 ```
 
-**通过镜像自动下载：** 登录仍在官网完成，然后在同一终端执行：
+**通过镜像自动下载：** 完成网页授权和 Token 输入后，在同一终端执行：
 
 ```bash
 export HF_ENDPOINT=https://hf-mirror.com
@@ -141,11 +147,11 @@ export HF_HUB_DISABLE_XET=1
 
 保留上表的模型名称和版本，缓存位置也保持第 3 步的设置。镜像是否能取得全部文件及固定版本，以实际下载结果为准；不能仅凭模型页面存在就认定权重齐全。
 
-选好一种下载入口后，按 [introduce.md](introduce.md) 运行项目。首次生成时，程序会自动下载所需权重并复用已有缓存。以后打开新终端，在第 3 步之后重新设置所选的 `HF_ENDPOINT`；镜像方式还需设置 `HF_HUB_DISABLE_XET=1`。
+选好一种下载入口后，按 [introduce.md](introduce.md) 运行项目。首次生成时，程序会自动下载所需权重并复用已有缓存。以后打开新终端，在第 3 步之后重新输入 Token，并设置所选的 `HF_ENDPOINT`；镜像方式还需设置 `HF_HUB_DISABLE_XET=1`。
 
 ## 环境准备完成
 
-安装器显示 `Installation complete`，并且已按第 4 步完成权重准备或登录后，打开 [introduce.md](introduce.md) 开始运行。
+安装器显示 `Installation complete`，并且已按第 4 步完成手动权重准备或设置自动下载所需的 Token 和入口后，打开 [introduce.md](introduce.md) 开始运行。
 
 <details>
 <summary>安装参数（需要修改时再看）</summary>

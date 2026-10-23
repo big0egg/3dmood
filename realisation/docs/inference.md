@@ -1,82 +1,96 @@
-# Cosmos-Transfer2.5-2B: World Generation with Adaptive Multimodal Control
-This guide provides instructions on running inference with Cosmos-Transfer2.5/general models.
+<a id="cosmos-transfer25-2b-world-generation-with-adaptive-multimodal-control"></a>
 
-![Architecture](../assets/Cosmos-Transfer2-2B-Arch.png)
+# Cosmos-Transfer2.5-2B：具有自适应多模态控制的世界生成
+本指南介绍如何使用 Cosmos-Transfer2.5 通用模型进行推理。
 
-### Pre-requisites
-1. Follow the [Setup guide](setup.md) for environment setup, checkpoint download and hardware requirements.
+![模型架构](../assets/Cosmos-Transfer2-2B-Arch.png)
 
-### Hardware Requirements
+<a id="pre-requisites"></a>
 
-The following table shows the GPU memory requirements for different Cosmos-Transfer2.5 models for single-GPU inference:
+### 前置条件
+1. 按照[安装指南](setup.md)完成环境配置、检查点下载，并确认满足硬件要求。
 
-| Model | Required GPU VRAM |
+<a id="hardware-requirements"></a>
+
+### 硬件要求
+下表列出了不同 Cosmos-Transfer2.5 模型进行单 GPU 推理时的显存需求：
+
+| 模型 | 所需 GPU 显存 |
 |-------|-------------------|
 | Cosmos-Transfer2.5-2B | 65.4 GB |
 
-### Inference performance
+<a id="inference-performance"></a>
 
-#### Segmentation
-The table below shows generation times(*) across different NVIDIA GPU hardware for single-GPU inference:
+### 推理性能
+<a id="segmentation"></a>
 
-| GPU Hardware | Cosmos-Transfer2.5-2B 93 frame generation time | Cosmos-Transfer2.5-2B E2E time (**)|
+#### 分割控制
+下表列出了不同 NVIDIA GPU 硬件进行单 GPU 推理时的生成耗时（*）：
+
+| GPU 硬件 | Cosmos-Transfer2.5-2B 生成 93 帧的耗时 | Cosmos-Transfer2.5-2B 端到端耗时（**） |
 |--------------|---------------|---------------|
-| NVIDIA B200 | 92.25 sec | 186.92 |
-| NVIDIA H100 NVL | 445.52 sec | 895.33 |
-| NVIDIA H100 PCIe | 264.13 sec | 533.58 |
-| NVIDIA H20 | 683.65 sec | 1370.39 |
+| NVIDIA B200 | 92.25 秒 | 186.92 |
+| NVIDIA H100 NVL | 445.52 秒 | 895.33 |
+| NVIDIA H100 PCIe | 264.13 秒 | 533.58 |
+| NVIDIA H20 | 683.65 秒 | 1370.39 |
 
-\* Generation times are listed for 720P video with 16FPS with segmentation control input and disabled guardrails. \
-\** E2E time is measured for input video with 121 frames, which results in two 93 frame "chunk" generations.
+\* 生成耗时对应 720P、16 FPS 视频，输入为分割控制信号，并关闭安全护栏。 \
+\** 端到端耗时使用 121 帧输入视频测量，需要生成两个各 93 帧的视频片段。
 
-#### Edge
-The table below compares base vs. distilled Transfer 2.5 Edge inference performance across GPU architectures.
+<a id="edge"></a>
 
-| Metric | GPUs | RTX PRO 6000 Blackwell SE | H20 | H100 NVL | H200 NVL | B200 | B300 |
+#### 边缘控制
+下表比较了不同 GPU 架构上 Transfer 2.5 边缘控制基础模型与蒸馏模型的推理性能。
+
+| 指标 | GPU 数量 | RTX PRO 6000 Blackwell SE | H20 | H100 NVL | H200 NVL | B200 | B300 |
 |--------|------|----------------------------|-----|----------|----------|------|------|
-| **Avg. Distilled Model Diffusion Time (s)** | 1 | 78.5 | 176.4 | 64.5 | 49.8 | 24.2 | 53.2 |
+| **蒸馏模型平均扩散耗时（秒）** | 1 | 78.5 | 176.4 | 64.5 | 49.8 | 24.2 | 53.2 |
 | | 4 | 33.7 | 62.7 | 27.4 | 20.4 | 12.6 | 25.6 |
 | | 8 | 25.0 | 44.0 | 20.4 | 16.9 | 11.1 | 19.9 |
-| **Avg. Base Diffusion Time (s)** | 1 | 605.7 | 1374.6 | 502.6 | 374.4 | 179.7 | 415.5 |
+| **基础模型平均扩散耗时（秒）** | 1 | 605.7 | 1374.6 | 502.6 | 374.4 | 179.7 | 415.5 |
 | | 4 | 196.1 | 373.4 | 154.5 | 117.0 | 62.3 | 127.7 |
 | | 8 | 118.8 | 201.5 | 92.5 | 82.4 | 41.8 | 76.1 |
-| **Avg. Performance Improvement** | 1 | 7.7x | 7.8x | 7.8x | 7.5x | 7.4x | 7.8x |
+| **平均性能提升** | 1 | 7.7x | 7.8x | 7.8x | 7.5x | 7.4x | 7.8x |
 | | 4 | 5.8x | 6.0x | 5.6x | 5.7x | 5.0x | 5.0x |
 | | 8 | 4.7x | 4.6x | 4.5x | 4.9x | 3.8x | 3.8x |
 
-## Inference with Pre-trained Cosmos-Transfer2.5 Models
+<a id="inference-with-pre-trained-cosmos-transfer25-models"></a>
 
-**For more detailed guidance about the control modalities and examples, checkout our Cosmos Cookbook [Control-Modalities](https://nvidia-cosmos.github.io/cosmos-cookbook/core_concepts/control_modalities/overview.html) recipe.**
+## 使用预训练 Cosmos-Transfer2.5 模型进行推理
+**有关控制模态的详细说明和示例，请参阅 Cosmos Cookbook 中的[控制模态](https://nvidia-cosmos.github.io/cosmos-cookbook/core_concepts/control_modalities/overview.html)教程。**
 
-Individual control variants can be run on a single GPU:
+各个控制变体均可在单 GPU 上运行：
+
 ```bash
 python examples/inference.py -i assets/robot_example/depth/robot_depth_spec.json -o outputs/depth
 ```
 
-For multi-GPU inference on a single control or to run multiple control variants, use [torchrun](https://docs.pytorch.org/docs/stable/elastic/run.html):
+若要对单个控制变体进行多 GPU 推理，或运行多个控制变体，请使用 [torchrun](https://docs.pytorch.org/docs/stable/elastic/run.html)：
+
 ```bash
 torchrun --nproc_per_node=8 --master_port=12341 examples/inference.py -i assets/robot_example/depth/robot_depth_spec.json -o outputs/depth
 ```
 
-We provide example parameter files for each individual control variant along with a multi-control variant:
+我们为各个控制变体以及多控制变体提供了参数文件示例：
 
-| Variant | Parameter File  |
+| 变体 | 参数文件 |
 | --- | --- |
-| Depth | `assets/robot_example/depth/robot_depth_spec.json` |
-| Edge | `assets/robot_example/edge/robot_edge_spec.json` |
-| Segmentation | `assets/robot_example/seg/robot_seg_spec.json` |
-| Blur | `assets/robot_example/vis/robot_vis_spec.json` |
-| Multi-control | `assets/robot_example/multicontrol/robot_multicontrol_spec.json` |
-| Distilled/Edge | `assets/robot_example/distilled/edge/robot_edge_spec.json`   |
+| 深度 | `assets/robot_example/depth/robot_depth_spec.json` |
+| 边缘 | `assets/robot_example/edge/robot_edge_spec.json` |
+| 分割 | `assets/robot_example/seg/robot_seg_spec.json` |
+| 模糊 | `assets/robot_example/vis/robot_vis_spec.json` |
+| 多控制 | `assets/robot_example/multicontrol/robot_multicontrol_spec.json` |
+| 蒸馏／边缘 | `assets/robot_example/distilled/edge/robot_edge_spec.json` |
 
-For an explanation of all the available parameters run:
+运行以下命令可查看所有可用参数的说明：
+
 ```bash
 python examples/inference.py --help
 
 python examples/inference.py control:edge --help # for information specific to edge control
 ```
 
-Parameters can be specified as json:
+参数可以使用 JSON 格式指定：
 
 ```jsonc
 {
@@ -126,8 +140,7 @@ Parameters can be specified as json:
 }
 ```
 
-If you would like the control inputs to only be used for some regions, you can define binary spatiotemporal masks with the corresponding control input modality in mp4 format. White pixels means the control will be used in that region, whereas black pixels will not. Example below:
-
+如果只希望在部分区域使用控制输入，可以为相应控制输入模态定义 MP4 格式的时空二值掩码。白色像素表示在对应区域使用控制信号，黑色像素表示不使用。示例如下：
 
 ```jsonc
 {
@@ -139,9 +152,10 @@ If you would like the control inputs to only be used for some regions, you can d
 }
 ```
 
-If you would like to run inference with distilled model, we need 2 changes on top of Transfer 2.5 inference: (1) specify the sampling steps `num_steps` in the JSON file (or `--num-steps` in the CLI), where the distilled model is trained with 4 sampling steps; (2) specify `--model=edge/distilled` in the inference command. Note that the distilled model is intended for short videos (strictly 93 sampled frames).
+使用蒸馏模型进行推理时，需要在 Transfer 2.5 推理的基础上做两项修改：（1）在 JSON 文件中指定采样步数 `num_steps`（或使用命令行参数 `--num-steps`），蒸馏模型采用 4 个采样步训练；（2）在推理命令中指定 `--model=edge/distilled`。注意，蒸馏模型面向短视频，采样帧数严格为 93 帧。
 
-Example json file for edge distilled Transfer 2.5 model:
+Transfer 2.5 边缘控制蒸馏模型的 JSON 文件示例：
+
 ```jsonc
 {
     "name": "robot_edge",
@@ -156,7 +170,8 @@ Example json file for edge distilled Transfer 2.5 model:
 }
 ```
 
-Example command to run edge distilled Transfer 2.5 inference:
+运行 Transfer 2.5 边缘控制蒸馏模型推理的命令示例：
+
 ```
 # 8 GPUs
 torchrun --nproc_per_node=8 --master_port=12341 examples/inference.py \
@@ -171,8 +186,10 @@ python examples/inference.py \
     --model=edge/distilled
 ```
 
-## Outputs
+<a id="outputs"></a>
 
-### Multi-control
+## 输出
+<a id="multi-control"></a>
 
+### 多控制
 https://github.com/user-attachments/assets/337127b2-9c4e-4294-b82d-c89cdebfbe1d

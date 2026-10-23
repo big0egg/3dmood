@@ -106,6 +106,10 @@ def main():
         env=env, text=True)
     if json.loads(output) != sdk:
         raise SystemExit('SDK versions changed unexpectedly; do not render with this environment')
+    # Verify the complete inference config before declaring installation done.
+    # The probe forces offline mode and never constructs models or loads weights.
+    subprocess.run([str(python), '-B', '-m', 'robot_realism.probe', '--imports-only'],
+                   cwd=ROOT, env=env, check=True)
     subprocess.run([str(python), '-c',
         'import numpy as np, torch; a=np.arange(4,dtype=np.float32); '
         'assert np.array_equal(torch.from_numpy(a).numpy(),a); '

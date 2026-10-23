@@ -1,78 +1,90 @@
-# Troubleshooting
+<a id="troubleshooting"></a>
 
-## Issues
+# 故障排查
+<a id="issues"></a>
 
-Also, check GitHub Issues for the [repository](https://github.com/orgs/nvidia-cosmos/repositories).
+## 常见问题
+也可以查看相关[仓库](https://github.com/orgs/nvidia-cosmos/repositories)的 GitHub Issues。
 
-### Changing the cache directory
-We download packages and checkpoints to the home directory by default. To change this, you can set the following variables.
-This is also needed if you get `No space left on device` errors when setting up or downloading checkpoints.
+<a id="changing-the-cache-directory"></a>
+
+### 更改缓存目录
+默认将软件包和检查点下载到用户主目录。要更改这一位置，可以设置以下变量。
+如果安装或下载检查点时出现 `No space left on device`，也需要调整这些设置。
+
 ```shell
 export UV_CACHE_DIR=<new_dir>/.cache
 export PIP_CACHE_DIR=<new_dir>/.cache
 export HF_HOME=<new_dir>/checkpoints
 ```
 
-### Missing Python.h
+<a id="missing-pythonh"></a>
 
-Error message: `fatal error: Python.h: No such file or directory`
+### 缺少 Python.h
+错误信息：`fatal error: Python.h: No such file or directory`
 
-This is fixed by [installing uv managed python](https://docs.astral.sh/uv/guides/install-python/#installing-python):
+可以通过[安装由 uv 管理的 Python](https://docs.astral.sh/uv/guides/install-python/#installing-python)来解决：
 
 ```shell
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv python install --reinstall
 ```
 
-Re-install the package:
+重新安装软件包：
 
 ```shell
 rm -rf .venv
 uv sync --extra=cu128
 ```
 
-### CUDA driver version insufficient
+<a id="cuda-driver-version-insufficient"></a>
 
-**Fix:** Update NVIDIA drivers to latest version compatible with CUDA [CUDA 12.8.1](https://docs.nvidia.com/cuda/archive/12.8.1/cuda-toolkit-release-notes/index.html#cuda-toolkit-major-component-versions)
+### CUDA 驱动版本不足
+**解决方法：**将 NVIDIA 驱动更新到兼容 [CUDA 12.8.1](https://docs.nvidia.com/cuda/archive/12.8.1/cuda-toolkit-release-notes/index.html#cuda-toolkit-major-component-versions) 的最新版本。
 
-Check driver compatibility:
+检查驱动兼容性：
 
 ```shell
 nvidia-smi | grep "CUDA Version:"
 ```
 
-### PYTHONPATH conflicts in NVIDIA containers
+<a id="pythonpath-conflicts-in-nvidia-containers"></a>
 
-When using `nvcr.io/nvidia/pytorch:25.xx-py3` containers, you will need to unset `PYTHONPATH` to be compatible with Python 3.10:
+### NVIDIA 容器中的 PYTHONPATH 冲突
+使用 `nvcr.io/nvidia/pytorch:25.xx-py3` 容器时，需要取消设置 `PYTHONPATH`，以兼容 Python 3.10：
 
 ```shell
 unset PYTHONPATH
 ```
 
-### Out of Memory (OOM) errors
+<a id="out-of-memory-oom-errors"></a>
 
-**Fix:** Use 2B models instead of 14B, multi-GPU, or reduce batch size/resolution
+### 内存或显存不足（OOM）
+**解决方法：**使用 2B 模型代替 14B 模型、使用多 GPU，或者减小批量大小／分辨率。
 
-## Guide
+<a id="guide"></a>
 
-### Logs
+## 排查指南
+<a id="logs"></a>
 
-Logs are saved to `<output_dir>/*.log`.
+### 日志
+日志保存在 `<output_dir>/*.log`。
 
-### Profiling
+<a id="profiling"></a>
 
-To profile, pass the `--profile` flag. A [pyinstrument](https://pyinstrument.readthedocs.io/en/latest/guide.html) profile will be exported to `<output_dir>/profile.pyisession`.
+### 性能分析
+传入 `--profile` 标志可进行性能分析。[pyinstrument](https://pyinstrument.readthedocs.io/en/latest/guide.html) 分析结果将导出到 `<output_dir>/profile.pyisession`。
 
-View the profile:
+查看分析结果：
 
 ```shell
 pyinstrument --load=<output_dir>/profile.pyisession
 ```
 
-Export the profile:
+导出分析结果：
 
 ```shell
 pyinstrument --load=<output_dir>/profile.pyisession -r html -o <output_dir>/profile.html
 ```
 
-See [pyinstrument](https://pyinstrument.readthedocs.io/en/latest/guide.html).
+更多信息请参阅 [pyinstrument](https://pyinstrument.readthedocs.io/en/latest/guide.html)。

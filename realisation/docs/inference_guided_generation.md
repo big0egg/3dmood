@@ -1,45 +1,46 @@
-# Cosmos-Transfer2.5-2B: World Generation with Guided Generation
-This guide provides instructions on running inference with guided generation. The Guided generation enables domain
-randomization by transferring simulation videos to realistic-looking footage while maintaining structural consistency
-through various control inputs, without any additional model training. Instead of allowing the model to
-freely reinterpret the entire scene, we encode simulation frames into the model’s latent space and apply spatial
-constraints during the denoising process. This selectively anchors important regions—such as surgical tools, robotic
-arms, or human phantoms—while leaving the rest of the scene unconstrained. As a result, the model can enhance
-global realism (lighting, textures, background complexity) while preserving the geometric structure and
-identity of critical foreground elements.
+<a id="cosmos-transfer25-2b-world-generation-with-guided-generation"></a>
 
-### Pre-requisites
-Follow the [Setup guide](setup.md) for environment setup, checkpoint download and hardware requirements.
+# Cosmos-Transfer2.5-2B：通过引导生成实现世界生成
+本指南介绍如何使用引导生成进行推理。引导生成无需额外训练模型，就能将仿真视频转换为具有真实感的画面，实现域随机化，并通过多种控制输入保持结构一致性。具体而言，先将仿真帧编码到模型的潜在空间，再在去噪过程中施加空间约束，选择性地固定手术器械、机械臂或人体仿真模型等重要区域，同时让场景其余部分自由生成。这样，模型可以改善整体真实感（光照、纹理、背景复杂度），并保留关键前景元素的几何结构和身份特征。
 
-## Guided Generation Inference with Pre-trained Cosmos-Transfer2.5 Models
+<a id="pre-requisites"></a>
 
-Individual control variants can be run on a single GPU:
+### 前置条件
+按照[安装指南](setup.md)完成环境配置、检查点下载，并确认满足硬件要求。
+
+<a id="guided-generation-inference-with-pre-trained-cosmos-transfer25-models"></a>
+
+## 使用预训练 Cosmos-Transfer2.5 模型进行引导生成推理
+各个控制变体均可在单 GPU 上运行：
+
 ```bash
 python examples/inference.py -i assets/humanoid_example/seg/humanoid_seg_guided_spec.json -o outputs/seg_guided_generation
 ```
 
-For multi-GPU inference on a single control or to run multiple control variants, use [torchrun](https://docs.pytorch.org/docs/stable/elastic/run.html):
+若要对单个控制变体进行多 GPU 推理，或运行多个控制变体，请使用 [torchrun](https://docs.pytorch.org/docs/stable/elastic/run.html)：
+
 ```bash
 torchrun --nproc_per_node=8 --master_port=12341 examples/inference.py -i assets/humanoid_example/seg/humanoid_seg_guided_spec.json -o outputs/seg_guided_generation
 ```
 
-We provide example parameter files for each individual control variant:
+我们为各个控制变体提供了参数文件示例：
 
-| Variant | Parameter File  |
+| 变体 | 参数文件 |
 | --- | --- |
-| Segmentation | `assets/humanoid_example/seg/humanoid_seg_guided_spec.json` |
-| Depth | `assets/humanoid_example/depth/humanoid_depth_guided_spec.json` |
-| Edge | `assets/humanoid_example/edge/humanoid_edge_guided_spec.json` |
-| Blur | `assets/humanoid_example/vis/humanoid_vis_guided_spec.json` |
+| 分割 | `assets/humanoid_example/seg/humanoid_seg_guided_spec.json` |
+| 深度 | `assets/humanoid_example/depth/humanoid_depth_guided_spec.json` |
+| 边缘 | `assets/humanoid_example/edge/humanoid_edge_guided_spec.json` |
+| 模糊 | `assets/humanoid_example/vis/humanoid_vis_guided_spec.json` |
 
-For an explanation of all the available parameters run:
+运行以下命令可查看所有可用参数的说明：
+
 ```bash
 python examples/inference.py --help
 
 python examples/inference.py control:seg --help # for information specific to seg control
 ```
 
-Parameters can be specified as json:
+参数可以使用 JSON 格式指定：
 
 ```jsonc
 {
@@ -95,13 +96,14 @@ Parameters can be specified as json:
 }
 ```
 
-### Example Input
+<a id="example-input"></a>
 
+### 输入示例
 <table>
   <tr>
-    <th>Input Video</th>
-    <th>Input Seg Control</th>
-    <th>Guided Generation Mask</th>
+    <th>输入视频</th>
+    <th>输入分割控制信号</th>
+    <th>引导生成掩码</th>
   </tr>
   <tr>
     <td valign="middle" width="33%">
@@ -116,10 +118,12 @@ Parameters can be specified as json:
   </tr>
 </table>
 
-### Example Output
+<a id="example-output"></a>
+
+### 输出示例
 <table>
   <tr>
-    <th>Output Video</th>
+    <th>输出视频</th>
   </tr>
   <tr>
     <td valign="middle" width="60%">
@@ -128,21 +132,23 @@ Parameters can be specified as json:
   </tr>
 </table>
 
-## Image-to-Image
+<a id="image-to-image"></a>
 
-We also provide an Image-to-Image example parameter file:
+## 图像到图像
+我们还提供了图像到图像的参数文件示例：
 
 ```bash
 python examples/inference.py -i assets/image_example/image2image_guided.json -o outputs/image2image_guided
 ```
 
-### Example Input
+<a id="example-input-1"></a>
 
+### 输入示例
 <table>
   <tr>
-    <th>Input Image</th>
-    <th>Input Edge Control</th>
-    <th>Guided Generation Mask</th>
+    <th>输入图像</th>
+    <th>输入边缘控制信号</th>
+    <th>引导生成掩码</th>
   </tr>
   <tr>
     <td valign="middle" width="33%">
@@ -157,10 +163,12 @@ python examples/inference.py -i assets/image_example/image2image_guided.json -o 
   </tr>
 </table>
 
-### Example Output
+<a id="example-output-1"></a>
+
+### 输出示例
 <table>
   <tr>
-    <th>Output Image</th>
+    <th>输出图像</th>
   </tr>
   <tr>
     <td valign="middle" width="60%">

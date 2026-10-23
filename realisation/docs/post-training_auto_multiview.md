@@ -1,40 +1,46 @@
-# Auto Multiview Post-training for HDMap
+<a id="auto-multiview-post-training-for-hdmap"></a>
 
-This guide provides instructions on running post-training with the Cosmos-Transfer2.5 Auto Multiview 2B model.
+# HDMap 自动驾驶多视角后训练
+本指南介绍如何使用 Cosmos-Transfer2.5 自动驾驶多视角 2B 模型进行后训练。
 
-**For more information and examples about post-training the Auto Multiview model, checkout our Cosmos Cookbook [Auto Multiview Post-training](https://nvidia-cosmos.github.io/cosmos-cookbook/recipes/post_training/transfer2_5/av_world_scenario_maps/post_training.html) recipe.**
+**有关自动驾驶多视角模型后训练的更多信息和示例，请参阅 Cosmos Cookbook 中的[自动驾驶多视角后训练](https://nvidia-cosmos.github.io/cosmos-cookbook/recipes/post_training/transfer2_5/av_world_scenario_maps/post_training.html)教程。**
 
-## Table of Contents
+<a id="table-of-contents"></a>
+
+## 目录
+<!--TOC-->
+
+- [目录](#table-of-contents)
+- [前置条件](#prerequisites)
+- [1. 准备数据](#1-preparing-data)
+  - [1.1 准备 Transfer 多视角训练数据集](#11-prepare-transfer-multiview-training-dataset)
+  - [1.2 检查数据集目录格式](#12-verify-the-dataset-folder-format)
+- [2. 后训练](#2-post-training)
+- [3. 使用后训练检查点进行推理](#3-inference-with-the-post-trained-checkpoint)
+  - [3.1 将 DCP 检查点转换为合并的 PyTorch 格式](#31-converting-dcp-checkpoint-to-consolidated-pytorch-format)
+  - [3.2 运行推理](#32-running-inference)
 
 <!--TOC-->
 
-- [Table of Contents](#table-of-contents)
-- [Prerequisites](#prerequisites)
-- [1. Preparing Data](#1-preparing-data)
-  - [1.1 Prepare Transfer Multiview Training Dataset](#11-prepare-transfer-multiview-training-dataset)
-  - [1.2 Verify the dataset folder format](#12-verify-the-dataset-folder-format)
-- [2. Post-training](#2-post-training)
-- [3. Inference with the Post-trained checkpoint](#3-inference-with-the-post-trained-checkpoint)
-  - [3.1 Converting DCP Checkpoint to Consolidated PyTorch Format](#31-converting-dcp-checkpoint-to-consolidated-pytorch-format)
-  - [3.2 Running Inference](#32-running-inference)
+<a id="prerequisites"></a>
 
-<!--TOC-->
+## 前置条件
+开始前，请阅读[后训练指南](./post-training.md)，了解详细配置步骤和重要后训练说明，包括检查点管理与最佳实践，为使用 Cosmos-Transfer2.5 进行后训练做好准备。
 
-## Prerequisites
+<a id="1-preparing-data"></a>
 
-Before proceeding, please read the [Post-training Guide](./post-training.md) for detailed setup steps and important post-training instructions, including checkpointing and best practices. This will ensure you are fully prepared for post-training with Cosmos-Transfer2.5.
+## 1. 准备数据
+<a id="11-prepare-transfer-multiview-training-dataset"></a>
 
-## 1. Preparing Data
+### 1.1 准备 Transfer 多视角训练数据集
+第一步是准备包含视频的数据集。
 
-### 1.1 Prepare Transfer Multiview Training Dataset
+需要提供一个包含 **MP4 格式**视频的目录，建议使用 720p，同时提供相应的目录存放 **MP4 格式**的 HDMap 控制输入视频。每个样本的各个视角应进一步按相机名称分入子目录。`assets/multiview_hdmap_posttrain_dataset` 提供了可用的示例数据集。
 
-The first step is preparing a dataset with videos.
+<a id="12-verify-the-dataset-folder-format"></a>
 
-You must provide a folder containing a collection of videos in **MP4 format**, preferably 720p, as well as a corresponding folder containing a collection of the hdmap control input videos in  **MP4 format**. The views for each samples should be further stratified by subdirectories with the camera name. We have an example dataset that can be used at `assets/multiview_hdmap_posttrain_dataset`
-
-### 1.2 Verify the dataset folder format
-
-Dataset folder format:
+### 1.2 检查数据集目录格式
+数据集目录格式如下：
 
 ```
 assets/multiview_hdmap_posttrain_dataset/
@@ -73,21 +79,22 @@ assets/multiview_hdmap_posttrain_dataset/
 │   │   └── *.mp4
 ```
 
-## 2. Post-training
+<a id="2-post-training"></a>
 
-Run the following command to execute an example post-training job with multiview data.
+## 2. 后训练
+运行以下命令，使用多视角数据执行示例后训练任务：
 
 ```bash
 torchrun --nproc_per_node=8 --master_port=12341 -m scripts.train --config=cosmos_transfer2/_src/transfer2_multiview/configs/vid2vid_transfer/config.py -- experiment=transfer2_auto_multiview_post_train_example job.wandb_mode=disabled
 ```
 
-The model will be post-trained using the multiview dataset. See the [data config](../cosmos_transfer2/_src/transfer2_multiview/configs/vid2vid_transfer/defaults/dataloader_local.py) to understand how the dataloader is defined.
+模型将使用该多视角数据集进行后训练。数据加载器的定义请参阅[数据配置](../cosmos_transfer2/_src/transfer2_multiview/configs/vid2vid_transfer/defaults/dataloader_local.py)。
 
-Checkpoints are saved to `${IMAGINAIRE_OUTPUT_ROOT}/PROJECT/GROUP/NAME/checkpoints`. By default, `IMAGINAIRE_OUTPUT_ROOT` is `/tmp/imaginaire4-output`. We strongly recommend setting `IMAGINAIRE_OUTPUT_ROOT` to a location with sufficient storage space for your checkpoints.
+检查点保存在 `${IMAGINAIRE_OUTPUT_ROOT}/PROJECT/GROUP/NAME/checkpoints`。`IMAGINAIRE_OUTPUT_ROOT` 默认值为 `/tmp/imaginaire4-output`。强烈建议将 `IMAGINAIRE_OUTPUT_ROOT` 设置为具有足够存储空间的位置。
 
-In the above example, `PROJECT` is `cosmos_transfer_v2p5`, `GROUP` is `auto_multiview`, `NAME` is `2b_cosmos_multiview_post_train_example`.
+在上述示例中，`PROJECT` 为 `cosmos_transfer_v2p5`，`GROUP` 为 `auto_multiview`，`NAME` 为 `2b_cosmos_multiview_post_train_example`。
 
-See the job config to understand how they are determined.
+这些值的具体来源请参阅任务配置：
 
 ```python
 transfer2_auto_multiview_post_train_example = dict(
@@ -103,11 +110,13 @@ transfer2_auto_multiview_post_train_example = dict(
 )
 ```
 
-## 3. Inference with the Post-trained checkpoint
+<a id="3-inference-with-the-post-trained-checkpoint"></a>
 
-### 3.1 Converting DCP Checkpoint to Consolidated PyTorch Format
+## 3. 使用后训练检查点进行推理
+<a id="31-converting-dcp-checkpoint-to-consolidated-pytorch-format"></a>
 
-Since the checkpoints are saved in DCP format during training, you need to convert them to consolidated PyTorch format (.pt) for inference. Use the `convert_distcp_to_pt.py` script:
+### 3.1 将 DCP 检查点转换为合并的 PyTorch 格式
+训练期间的检查点以 DCP 格式保存，因此推理前需要将其转换为合并的 PyTorch 格式（.pt）。使用 `convert_distcp_to_pt.py` 脚本：
 
 ```bash
 # Get path to the latest checkpoint
@@ -119,21 +128,22 @@ CHECKPOINT_DIR=$CHECKPOINTS_DIR/$CHECKPOINT_ITER
 python scripts/convert_distcp_to_pt.py $CHECKPOINT_DIR/model $CHECKPOINT_DIR
 ```
 
-This conversion will create three files:
+转换后会创建三个文件：
 
-- `model.pt`: Full checkpoint containing both regular and EMA weights
-- `model_ema_fp32.pt`: EMA weights only in float32 precision
-- `model_ema_bf16.pt`: EMA weights only in bfloat16 precision (recommended for inference)
+- `model.pt`：完整检查点，同时包含普通权重和 EMA 权重。
+- `model_ema_fp32.pt`：仅包含 float32 精度的 EMA 权重。
+- `model_ema_bf16.pt`：仅包含 bfloat16 精度的 EMA 权重，推荐用于推理。
 
-### 3.2 Running Inference
+<a id="32-running-inference"></a>
 
-After converting the checkpoint, you can run inference with your post-trained model using a JSON configuration file that specifies the inference parameters (see `assets/multiview_example/multiview_spec.json` for an example).
+### 3.2 运行推理
+转换检查点后，可以使用后训练模型进行推理，并通过 JSON 配置文件指定推理参数，示例见 `assets/multiview_example/multiview_spec.json`。
 
 ```bash
 export NUM_GPUS=8
 torchrun --nproc_per_node=$NUM_GPUS --master_port=12341 -m examples.multiview -i assets/multiview_example/multiview_spec.json -o outputs/postrained-auto-mv --checkpoint_path $CHECKPOINT_DIR/model_ema_bf16.pt --experiment transfer2_auto_multiview_post_train_example
 ```
 
-Generated videos will be saved to the output directory (e.g., `outputs/postrained-auto-mv/`).
+生成的视频将保存到输出目录，例如 `outputs/postrained-auto-mv/`。
 
-For more inference options and advanced usage, see [docs/inference.md](./inference.md).
+更多推理选项和高级用法请参阅 [docs/inference.md](./inference.md)。

@@ -105,7 +105,7 @@ ls /root/opendatasets/LIBERO_GT_v1_plane_fix/manifest.json
 python -m robot_realism doctor --config configs/realism/cosmos25_libero_v1.yaml
 ```
 
-**完成标志：** 显示 `ready: true`。然后建立任务计划：
+**完成标志：** 显示 `ready: true`。此检查会核对依赖、加载当前控制方式的模型配置并测试 PPU 基础算子，全部通过后再建立任务计划：
 
 ```bash
 python -m robot_realism plan --config configs/realism/cosmos25_libero_v1.yaml

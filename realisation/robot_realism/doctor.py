@@ -18,7 +18,8 @@ def doctor(config):
     python = Path(config['runtime']['python'])
     checks.append({'component': 'runtime_python', 'ok': python.is_file(), 'path': str(python)})
     if python.is_file():
-        result = subprocess.run([str(python), '-B', '-m', 'robot_realism.probe'], cwd=PROJECT,
+        result = subprocess.run([str(python), '-B', '-m', 'robot_realism.probe',
+                                 '--controls', *config['generation']['controls']], cwd=PROJECT,
                                 env=worker_env(config), text=True, capture_output=True, timeout=180)
         lines = [line for line in result.stdout.splitlines() if line.startswith('REALISM_PROBE_JSON=')]
         if lines:
