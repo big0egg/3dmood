@@ -1,8 +1,9 @@
 # HOT3D 微调：15,000 帧训练＋3,000 帧评测
 
-本模块微调 **3D-MOOD、WildDet3D**，训练与原有主评测使用 **RGB＋相机内参＋固定类别文本**。
-新增WildDet3D的 **RGB＋GT二维框＋相机内参** 补充评测，对比官方与微调权重，不重新训练。
-3D-MOOD当前原生推理入口不支持框提示，不参加此项。新增实验的完整操作见 [introduce.md](introduce.md)。
+本模块对 **3D-MOOD、WildDet3D** 进行几何微调，并在微调前、后分别评测两种输入：
+**RGB＋类别文本＋相机内参**，以及 **RGB＋GT二维框＋相机内参**。
+文本评测包含两个模型；GT二维框评测仅包含原生支持框提示的WildDet3D。
+完整运行顺序见本文“分步骤操作”，简明操作指南见 [introduce.md](introduce.md)。
 从现有官方权重开始，冻结原二维检测、语言和主要特征网络，更新三维预测头。
 默认训练4轮，使用预先设定的最后一轮权重评测，不用评测集挑权重。
 训练 loss 实时上传到 W&B；同时保留本地逐次更新记录和报告中的静态曲线。
@@ -20,40 +21,24 @@
 3D-MOOD真实帧的CPU训练前向／反向。
 正式任务在DSW原生Terminal运行；当前执行到哪里，以产物根目录的 `suite_status.json`、
 `status.json` 和模型的 `runs/<模型>/status.json` 为准，不能仅凭启动日志判断完成。
-原流程进度在 `suite_status.json`；新增框提示进度在 `evaluation/gt-box/status.json`、
-`evaluation/gt-box/suite_status.json`。`configs/wandb.json`在训练启动时读取。
+标准全流程进度在 `suite_status.json`，任务顺序记录在 `workflow.json`；
+框提示推理与评分的详细进度在 `evaluation/gt-box/status.json`。`configs/wandb.json`在训练启动时读取。
 已完成的验证见 [VALIDATION.md](VALIDATION.md)。
 
-## 已有文本结果时，补跑GT二维框提示评测
+## 两类输入与指标
 
-当前实验已完成文本微调评测。保持原数据、权重和配置，在DSW原生Terminal执行：
+| 输入条件 | 参加模型 | 微调前与微调后各运行什么 | 主要指标 |
+| --- | --- | --- | --- |
+| RGB＋固定类别文本＋相机内参 | 3D-MOOD、WildDet3D | 自行定位物体并预测三维框 | geometry/semantic AP3D、APcenter |
+| RGB＋GT二维框＋相机内参 | WildDet3D | 给定目标图像位置后预测三维框 | 逐目标成功率；辅助geometry AP |
 
-```bash
-nohup /mnt/workspace/venvs/wilddet3d-ppu/bin/python -B \
-  /mnt/workspace/3dmood/hot3d-finetune/run.py box-supplement \
-  --config /root/hot3d-finetune-v1/resolved_config.json \
-  > /mnt/workspace/3dmood/hot3d-finetune/box-launch.log 2>&1 &
-```
+两类输入使用同一批3,000张评测图、14,373个有效目标，以及同一套本次微调权重。
+微调采用文本训练流程；两类输入是评测条件，不是两套不同训练。没有单独进行框提示专项训练。
 
-它依次运行两份权重的框提示推理与评分，再合并 `/root/hot3d-finetune-v1/report/report.md`；
-不重新抽帧、训练或执行文本评测。中断后重跑同一命令，完整目标与帧会校验后复用。
-
-- 仍使用同一批3,000张评测图、14,373个有效目标，输入框来自GT的 `projected_bbox`。
-- 只提供RGB、内参和一个GT二维框，使用原生 `geometric` 模式；不提供GT类别、三维几何、mask或深度。
-- 主指标是绑定输入目标的成功率，辅助指标是geometry AP；不计算semantic AP。
-  失败计入分母，0.7不删除评测预测；设备/OOM等意外异常会停止而不跳过。
-- GT框给出了理想定位和目标数量，因此与RGB＋文本结果分表展示，不能直接当作同输入条件比较。
-- 这是文本流程下微调权重向框提示流程的迁移评测，没有进行框提示专项训练。
-
-查看进度：
-
-```bash
-tail -n 60 -f /mnt/workspace/3dmood/hot3d-finetune/box-launch.log
-```
-
-报告新增成功率、辅助AP、平均IoU、中心误差、失败原因、秒/目标、FPS、同目标改善/退步及框图。
-数值只在完整评分后出现，未完成时明确显示待完成。
-参数、分步命令、输出文件和评分口径见 [introduce.md](introduce.md)。
+GT二维框来自 `projected_bbox`，逐目标使用原生 `geometric` 模式；不提供目标类别、
+GT三维位置、尺寸、旋转、mask或深度。成功率严格绑定输入目标，失败计入分母；
+辅助AP按置信度排序并允许帧内一对一匹配。0.7不删除评测预测。
+GT框已给出理想二维定位和目标数量，因此两类分数分表展示，不作为同输入条件直接比较。
 
 ## 直接执行全流程
 
@@ -68,12 +53,20 @@ nohup bash /mnt/workspace/3dmood/hot3d-finetune/run_full.sh \
 
 流程依次执行：
 
-1. 建立独立的数据环境 `hot3d-data`，安装VRS读取和数据处理依赖；不修改两个模型环境。
-2. 检查两个模型环境的PPU可见性、基础权重和数据环境。
-3. 准备并校验精确15,000帧训练集、3,000帧评测集。
-4. 3D-MOOD原权重评测 → 微调4轮 → 微调权重评测。
-5. WildDet3D原权重评测 → 微调4轮 → 微调权重评测。
-6. 生成文本报告后，自动补跑WildDet3D两份权重的GT二维框提示评测，合并最终报告与分条件CSV/JSON、框图。
+1. 建立独立的数据环境 `hot3d-data`，安装VRS读取和数据处理依赖。
+2. 检查两个模型环境的PPU、基础权重与数据环境；审计源数据。
+3. 准备并校验15,000帧训练集、3,000帧评测集。
+4. 评测官方权重：3D-MOOD文本、WildDet3D文本、WildDet3D GT二维框。
+5. 两个模型顺序微调，默认各4轮。
+6. 评测微调权重：3D-MOOD文本、WildDet3D文本、WildDet3D GT二维框。
+7. 两种输入共六组完整结果就绪后，统一生成最终报告、CSV/JSON和对比图。
+
+`run_full.sh`使用 `workflow.py` 调度，执行顺序与下方手动步骤一致。
+只查看任务顺序、不启动实验，可运行：
+
+```bash
+/mnt/workspace/venvs/3d-mood-ppu/bin/python -B /mnt/workspace/3dmood/hot3d-finetune/workflow.py --dry-run
+```
 
 查看日志：
 
@@ -329,15 +322,17 @@ bash "$FT/setup_data_env.sh"
 还需成功结束。最终 `train.jsonl` 15,000行、`eval.jsonl` 3,000行，审计无交集。
 中断后重新执行步骤3，按已完成录制和图片恢复；不删除 `candidate_cache/` 或 `completed_frames/`。
 
-**步骤4：运行原权重基线。** 两个模型分别在同一3,000帧上生成完整预测和AP：
+**步骤4：评测官方权重的两种输入。** 在同一3,000帧上依次执行以下三组基线：
 
 ```bash
 "$MOOD_PY" -B "$FT/run.py" evaluate --model 3dmood --variant baseline --root "$ARTIFACTS"
 "$WILD_PY" -B "$FT/run.py" evaluate --model wilddet3d --variant baseline --root "$ARTIFACTS"
+"$WILD_PY" -B "$FT/run.py" evaluate --track gt-box --model wilddet3d --variant baseline --root "$ARTIFACTS"
 ```
 
-每个命令都需成功结束，结果位于 `evaluation/text/full/metrics/`，逐帧预测在
-`evaluation/text/models/`。断点后重新执行对应命令，完整预测会校验后复用。
+前两条是RGB＋文本评测，结果在 `evaluation/text/full/metrics/`；第三条是RGB＋GT二维框评测，
+结果在 `evaluation/gt-box/full/metrics/`。三条命令都成功结束后再进入训练。
+重跑对应命令会校验并复用完整预测；框提示还支持复用已完成的目标。
 
 **步骤5：登录W&B并训练。** 先完成上节登录，再顺序运行下面两个命令。
 不要同时训练；同一命令也用于恢复：
@@ -351,19 +346,19 @@ bash "$FT/setup_data_env.sh"
 且 `checkpoints/final_head.pt` 存在。`last.pt` 只表示存在恢复点，不表示训练完毕。
 通过 `wandb-status` 获取曲线网址；本地 `train.jsonl` 每行是一次已完成的参数更新。
 
-**步骤6：评测微调权重。** `--variant baseline` 表示原权重，`finetuned` 表示完整训练后的增量头：
+**步骤6：评测微调权重的两种输入。** `baseline`表示官方权重，`finetuned`表示官方权重＋完整训练后的增量头：
 
 ```bash
 "$MOOD_PY" -B "$FT/run.py" evaluate --model 3dmood --variant finetuned --root "$ARTIFACTS"
 "$WILD_PY" -B "$FT/run.py" evaluate --model wilddet3d --variant finetuned --root "$ARTIFACTS"
+"$WILD_PY" -B "$FT/run.py" evaluate --track gt-box --model wilddet3d --variant finetuned --root "$ARTIFACTS"
 ```
 
-必须与基线使用相同配置和评测集，不先按0.7删除预测。两个命令成功结束后，
-应有两个模型×两种权重共四组完整预测与指标。
+必须与步骤4使用相同配置、评测集和输入规则，不按0.7删除评测预测。
+三条命令成功结束后，共有六组完整预测和指标：文本两模型×两种权重为四组，
+GT二维框一模型×两种权重为两组。
 
-**步骤7：补充GT二维框提示并生成最终报告。**
-
-先执行本文开头的 `box-supplement`。若两组框提示评分都已完成，只需合并报告：
+**步骤7：生成两种输入的最终对比报告。** 步骤4、5、6全部完成后执行：
 
 ```bash
 "$DATA_PY" -B "$FT/run.py" report --root "$ARTIFACTS"
@@ -371,8 +366,10 @@ bash "$FT/setup_data_env.sh"
 
 打开 `$ARTIFACTS/report/report.md`，同时得到 `comparison.csv`、`results.json`、
 训练曲线PNG及固定12帧的三维框对比图。首次生成文本报告会核验训练日志；
-已有文本报告时保留原内容并合并框提示结果。新增 `box_comparison.csv`、`box_ap_comparison.csv`、
-`box_paired_comparison.csv`，`results.json`保留原models并新增gt_box字段。
+报告分别展示RGB＋文本与RGB＋GT二维框结果。`comparison.csv`保存文本指标；
+`box_comparison.csv`保存框提示成功率、失败、误差和速度；`box_ap_comparison.csv`保存辅助AP；
+`box_paired_comparison.csv`保存同目标改善/退步。`results.json`的models保存文本结果，gt_box保存框提示结果。
+若任一组尚未完成，不将其当作完整最终实验，也不填写假分数。
 若已产生W&B状态，报告还包含最新一次运行的状态和网页链接。
 
 ## 训练、恢复与评测约定
@@ -393,8 +390,8 @@ CPU测试已验证恢复后与连续训练的权重一致；PPU上的浮点数�
 本模块的 `evaluate --variant finetuned` 会加载原权重，再严格加载增量权重。
 增量权重也包含数据协议和预设轮数完成标记，拒绝错误基础权重或错误数据版本。
 
-每张评测图固定给完整25类文本词表；不提供GT目标数、该帧类别、GT位置、物体CAD、GT mask或深度。
-二维投影框仅在训练时作为模型原生目标匹配的监督，不是评测提示。
+RGB＋文本评测中，每张图固定给完整25类文本词表；不提供GT目标数、该帧类别、GT位置、物体CAD、GT mask或深度。
+GT二维框仅在框提示评测中作为输入；训练时还用于模型原生目标匹配监督。两种评测的输入边界分别核验。
 原始与微调权重使用同一相机内参路径、预处理、原生NMS和预测上限。
 原权重评测在这3,000帧重新执行，不把旧15,160帧总分拿来直接比较。
 
@@ -408,6 +405,7 @@ geometry忽略类别；semantic要求类别一致并按类平均，两者分别�
 /root/hot3d-finetune-v1/
 ├── resolved_config.json
 ├── suite_status.json
+├── workflow.json             # 标准全流程任务顺序
 ├── data/hot3d-aria-18k-v1/
 │   ├── preparation.json       # 数据来源、配置与源码摘要
 │   ├── candidate_cache/       # 完整GT候选缓存，按录制恢复
@@ -432,9 +430,12 @@ geometry忽略类别；semantic要求类别一致并按类平均，两者分别�
 │   └── checkpoints/
 │       ├── last.pt            # 可恢复的完整训练状态
 │       └── final_head.pt      # 预设最后一轮的三维头增量权重
-├── evaluation/text/
-│   ├── models/<模型-权重>/predictions/
-│   └── full/metrics/          # AP、分类细表、工作点和速度
+├── evaluation/
+│   ├── text/models/<模型-权重>/predictions/
+│   ├── text/full/metrics/     # 文本AP、分类细表、工作点和速度
+│   ├── gt-box/models/wilddet3d-<权重>/objects/       # 逐目标断点
+│   ├── gt-box/models/wilddet3d-<权重>/predictions/   # 逐帧记录
+│   └── gt-box/full/metrics/   # 成功率、辅助AP、逐目标表及审计
 └── report/
     ├── report.md
     ├── comparison.csv

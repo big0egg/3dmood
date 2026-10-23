@@ -1,102 +1,147 @@
-# HOT3D微调与两类输入评测：操作说明
+# HOT3D微调与两类输入评测：完整运行说明
 
-本模块训练3D-MOOD和WildDet3D的三维几何头，并比较官方权重与微调权重。
-完整数据、训练参数与W&B设置见 [README.md](README.md)。
+按以下顺序完成一次实验：**准备数据 → 官方权重两类评测 → 微调 → 微调权重两类评测 → 最终报告**。
+详细参数、W&B和数据选择规则见 [README.md](README.md)。所有模型命令在能访问PPU的DSW原生Terminal执行。
 
-## 两类评测分别做什么
+## 实验包含哪些对比
 
-| 评测输入 | 参加模型 | 主要任务 | 主要结果 |
+| 输入条件 | 模型 | 微调前与微调后分别测什么 | 主要指标 |
 | --- | --- | --- | --- |
-| RGB＋固定类别文本＋相机内参 | 3D-MOOD、WildDet3D | 自行定位物体并估计三维框 | geometry/semantic AP3D、APcenter |
-| RGB＋GT二维框＋相机内参 | WildDet3D | 给定目标图像位置后估计三维框 | 逐目标成功率，辅助geometry AP |
+| RGB＋固定类别文本＋相机内参 | 3D-MOOD、WildDet3D | 自行定位目标并估计三维框 | geometry/semantic AP3D、APcenter |
+| RGB＋GT二维框＋相机内参 | WildDet3D | 给定目标图像位置后估计三维框 | 逐目标成功率；辅助geometry AP |
 
-3D-MOOD训练函数里的 `boxes2d` 是监督参数，当前原生推理路径不消费框提示，所以不参加第二类。
-WildDet3D使用原生 `input_boxes` 和 `prompt_text="geometric"`；`geometric`是固定模式标记，不包含目标类别。
+一共六组结果：文本两模型×两种权重为四组，GT二维框一模型×两种权重为两组。
+两类评测使用同一批3,000张图片、14,373个有效目标，以及同一套微调权重。
+微调采用文本训练流程，不为二维框模式再训练一次；框提示结果反映几何微调向该输入模式的迁移。
+3D-MOOD当前原生推理入口不消费框提示，所以不参加GT二维框条件。
 
-当前两类评测使用的是**同一套在文本流程下微调好的权重**。增加框提示评测不重新训练，
-结果表示这次几何微调向框提示任务的迁移，不应写成“完成了框提示专项微调”。
+## 步骤1：设置路径并准备数据环境
 
-## 已完成文本微调，接下来执行什么
-
-默认已有：
-
-- 训练/评测清单：`/root/hot3d-finetune-v1/data/hot3d-aria-18k-v1/`。
-- WildDet3D微调权重：`/root/hot3d-finetune-v1/runs/wilddet3d/checkpoints/final_head.pt`。
-- 原文本报告：`/root/hot3d-finetune-v1/report/report.md`。
-
-保持这些目录和原配置，**在能访问PPU的DSW原生Terminal**运行：
+在当前Terminal设置变量；重新打开Terminal后需要重新设置：
 
 ```bash
-nohup /mnt/workspace/venvs/wilddet3d-ppu/bin/python -B \
-  /mnt/workspace/3dmood/hot3d-finetune/run.py box-supplement \
-  --config /root/hot3d-finetune-v1/resolved_config.json \
-  > /mnt/workspace/3dmood/hot3d-finetune/box-launch.log 2>&1 &
+FT=/mnt/workspace/3dmood/hot3d-finetune
+MOOD_PY=/mnt/workspace/venvs/3d-mood-ppu/bin/python
+WILD_PY=/mnt/workspace/venvs/wilddet3d-ppu/bin/python
+DATA_PY=/mnt/workspace/venvs/hot3d-data/bin/python
+ARTIFACTS=/root/hot3d-finetune-v1
+
+bash "$FT/setup_data_env.sh"
 ```
 
-命令顺序完成：官方权重框提示推理与评分 → 微调权重框提示推理与评分 → 合并原报告。
-不会重新抽帧、训练或推理原文本实验。默认数据是3,000张图片、14,373个有效目标。
+FT是代码目录，ARTIFACTS是产物目录，两者不是同一个路径。
+首次依赖安装需要网络；两个模型已有各自的PPU环境，数据处理使用独立hot3d-data环境。
 
-查看日志与状态：
+## 步骤2：检查环境和源数据
 
 ```bash
-tail -n 60 -f /mnt/workspace/3dmood/hot3d-finetune/box-launch.log
+"$MOOD_PY" -B "$FT/run.py" check --root "$ARTIFACTS"
+"$MOOD_PY" -B "$FT/run.py" audit --root "$ARTIFACTS" --output /tmp/hot3d-source-audit.json
 ```
+
+环境检查须为ready=true，两个模型都能访问PPU，官方权重路径均存在。
+源数据审计只统计候选，不代表图片已经抽取完成。
+
+## 步骤3：准备训练集和评测集
 
 ```bash
-cat /root/hot3d-finetune-v1/evaluation/gt-box/status.json
-cat /root/hot3d-finetune-v1/evaluation/gt-box/suite_status.json
+"$DATA_PY" -B "$FT/run.py" prepare --root "$ARTIFACTS"
+"$DATA_PY" -B "$FT/run.py" verify --images --root "$ARTIFACTS"
 ```
 
-完成标志：补充流程的 `suite_status.json` 为 `stage=complete`、`complete=true`，
-返回状态的 `box_evaluation_complete=true`。原根目录的 `suite_status.json` 是旧流程记录，
-不能用它判断新增框提示评测是否结束。
+完成后应有15,000张训练图、3,000张评测图，清单在
+`$ARTIFACTS/data/hot3d-aria-18k-v1/train.jsonl`、`eval.jsonl`。
+数据状态为data_ready，并且完整图片校验成功；当前阶段先处理GT候选，再读取VRS保存RGB。
 
-报告内分两部分展示输入条件；两组完整评分尚未完成时，会明确显示待完成，不补零或借用文本分数。
+训练图保存在该数据目录的rgb_pinhole下，评测清单引用
+`/root/benchmarkv2/data/hot3d-aria-v1/rgb_pinhole/`中的选定图片。
+GT二维框取同一份GT中的projected_bbox，无需另行生成第二套评测数据。
 
-## 分步运行
+## 步骤4：评测官方权重，两类输入都运行
 
-第一步，官方权重：
+依次执行三条命令：
 
 ```bash
-/mnt/workspace/venvs/wilddet3d-ppu/bin/python -B /mnt/workspace/3dmood/hot3d-finetune/run.py \
-  evaluate --track gt-box --model wilddet3d --variant baseline \
-  --config /root/hot3d-finetune-v1/resolved_config.json
+"$MOOD_PY" -B "$FT/run.py" evaluate --track text --model 3dmood --variant baseline --root "$ARTIFACTS"
+"$WILD_PY" -B "$FT/run.py" evaluate --track text --model wilddet3d --variant baseline --root "$ARTIFACTS"
+"$WILD_PY" -B "$FT/run.py" evaluate --track gt-box --model wilddet3d --variant baseline --root "$ARTIFACTS"
 ```
 
-第二步，微调权重：
+前两条对应RGB＋文本，第三条对应RGB＋GT二维框；每条都包含完整推理和评分。
+完成标志：text/full/metrics下有两份官方权重指标，gt-box/full/metrics下有一份官方权重指标，
+这些目录都位于 `$ARTIFACTS/evaluation/` 下。三组均成功结束后再开始微调。
+
+## 步骤5：登录W&B并微调两个模型
+
+使用W&B SDK所在的3D-MOOD环境登录一次，再顺序训练：
 
 ```bash
-/mnt/workspace/venvs/wilddet3d-ppu/bin/python -B /mnt/workspace/3dmood/hot3d-finetune/run.py \
-  evaluate --track gt-box --model wilddet3d --variant finetuned \
-  --config /root/hot3d-finetune-v1/resolved_config.json
+"$MOOD_PY" -m wandb login
+"$MOOD_PY" -B "$FT/run.py" train --model 3dmood --root "$ARTIFACTS"
+"$WILD_PY" -B "$FT/run.py" train --model wilddet3d --root "$ARTIFACTS"
 ```
 
-两条命令都包含推理和评分，应顺序执行，不与训练或其他PPU评测并发。
-模型、数据或代码发生变化会拒绝混用旧断点。
+默认每个模型训练4轮，共7,500次参数更新。训练完成应同时满足：
+`runs/<模型>/status.json`为stage=complete，以及 `checkpoints/final_head.pt`存在。
+last.pt只是恢复点，不代表已训练完。GT框评测直接使用本次微调权重，不新增训练任务。
 
-第三步，合并原报告：
+## 步骤6：评测微调权重，两类输入都运行
+
+保持与步骤4相同的配置、数据和提示规则，仅把variant切换为finetuned：
 
 ```bash
-/mnt/workspace/venvs/hot3d-data/bin/python -B /mnt/workspace/3dmood/hot3d-finetune/run.py \
-  report --config /root/hot3d-finetune-v1/resolved_config.json
+"$MOOD_PY" -B "$FT/run.py" evaluate --track text --model 3dmood --variant finetuned --root "$ARTIFACTS"
+"$WILD_PY" -B "$FT/run.py" evaluate --track text --model wilddet3d --variant finetuned --root "$ARTIFACTS"
+"$WILD_PY" -B "$FT/run.py" evaluate --track gt-box --model wilddet3d --variant finetuned --root "$ARTIFACTS"
 ```
 
-`report`不启动模型、不训练。已有文本报告时保留其内容，更新框提示补充章节；
-多次运行不会重复追加同一章节。若原文本报告不存在，先按原流程从完整文本结果生成它。
+完成标志：两种输入下，官方和微调权重共六组预测与指标全部完整。
+框提示状态可看 `$ARTIFACTS/evaluation/gt-box/status.json`。
+
+## 步骤7：统一生成最终报告
+
+确认上述六组评分全部完成，再执行：
+
+```bash
+"$DATA_PY" -B "$FT/run.py" report --root "$ARTIFACTS"
+```
+
+打开 `$ARTIFACTS/report/report.md`，分表查看两类输入下微调前后的结果。
+文本结果包含AP、分类细表、速度和训练曲线；框提示结果包含成功率、辅助AP、误差、失败、速度、
+同目标改善/退步及二维框与三维框对照图。完整输出文件见下方“输出文件”。
+未完成的评测会明确标为待完成，不算完整最终实验，也不会用另一类输入的分数替代。
+
+## 一条命令运行全部步骤
+
+完成W&B登录后执行：
+
+```bash
+nohup bash /mnt/workspace/3dmood/hot3d-finetune/run_full.sh \
+  > /mnt/workspace/3dmood/hot3d-finetune/full-launch.log 2>&1 &
+```
+
+全流程通过workflow.py按与上面一致的顺序执行，根目录suite_status.json记录当前阶段、模型及输入条件；
+workflow.json保存任务计划。最终stage=complete表示两类评测及报告全部完成。
+已在分步运行时，不要同时启动全流程。中断后保持配置和源码，重跑对应阶段命令即可校验并恢复。
+
+只查看计划，不启动任务：
+
+```bash
+"$MOOD_PY" -B "$FT/workflow.py" --dry-run
+```
 
 ## 参数在哪里改、可以填什么
 
 | 参数/命令 | 意义与可填内容 |
 | --- | --- |
-| `box-supplement` | 自动补跑两份权重并合并报告，固定使用WildDet3D |
 | `evaluate --track gt-box` | 单独进行框提示推理和评分 |
-| `--track text` | 原有文本评测；省略track也默认为文本 |
+| `--track text` | RGB＋类别文本评测；省略track也默认为文本 |
 | `--model` | 框提示只能填 `wilddet3d`；文本可填 `3dmood` 或 `wilddet3d` |
 | `--variant` | `baseline`官方权重，`finetuned`官方权重＋原实验增量三维头；evaluate必填 |
-| `--config` | 原实验配置文件绝对路径，建议使用上面的resolved_config.json |
-| `--root` | 覆盖产物根目录；补跑当前实验必须沿用 `/root/hot3d-finetune-v1` |
-| `--score-only` | 用于evaluate或box-supplement；完整预测已存在时仅重评分，可使用hot3d-data环境且不需要PPU |
-| `--report-dir` | 用于report或box-supplement，填写报告输出目录；省略时为ROOT/report，可生成独立预览 |
+| `--config` | 完整配置文件的绝对路径；省略时用configs/default.json。恢复时可使用ARTIFACTS/resolved_config.json快照 |
+| `--root` | 产物根目录，默认/root/hot3d-finetune-v1；同一次实验各步骤使用同一目录 |
+| `--score-only` | 用于evaluate --track gt-box；完整预测已存在时仅重评分，可用hot3d-data环境且不需要PPU |
+| `--report-dir` | 用于report，填写报告输出目录；省略时为ROOT/report，可生成独立预览 |
 | `--output` | 可选保存命令返回状态的JSON文件，与逐帧预测目录不同 |
 
 基础模型路径取主配置的 `models.wilddet3d.checkpoint`、`lingbot_checkpoint` 和 `python`。
@@ -159,7 +204,7 @@ cat /root/hot3d-finetune-v1/evaluation/gt-box/suite_status.json
 /root/hot3d-finetune-v1/
 ├── evaluation/gt-box/
 │   ├── input_manifest.json             # RGB路径、内参、纯二维框提示及摘要
-│   ├── resolved_config.json            # 补跑配置；不覆盖原训练配置快照
+│   ├── resolved_config.json            # 框提示任务配置（使用独立批量入口时保存）
 │   ├── status.json / suite_status.json
 │   ├── models/wilddet3d-<variant>/
 │   │   ├── model.json                  # 模型/权重、框提示和源码身份
@@ -170,12 +215,12 @@ cat /root/hot3d-finetune-v1/evaluation/gt-box/suite_status.json
 │       ├── wilddet3d-<variant>_targets.csv
 │       └── wilddet3d-<variant>_audit.json
 └── report/
-    ├── report.md                       # 原文本内容＋框提示补充章节
-    ├── comparison.csv                  # 原文本结果保持不变
+    ├── report.md                       # 两种输入下的微调前后结果
+    ├── comparison.csv                  # RGB＋文本的指标
     ├── box_comparison.csv              # 成功率、失败、误差、速度
     ├── box_ap_comparison.csv           # 辅助AP
     ├── box_paired_comparison.csv        # 同目标改善/退步
-    ├── results.json                    # 保留原models，新增gt_box
+    ├── results.json                    # models为文本结果，gt_box为框提示结果
     └── visualizations/gt-box/          # 两份权重各12张固定帧结果图
 ```
 
@@ -184,9 +229,8 @@ cat /root/hot3d-finetune-v1/evaluation/gt-box/suite_status.json
 
 ## 与原实验兼容
 
-新增实现位于 `hot3d_ft/boxeval/`，由根目录 `run.py` 分发。原训练和文本预测源码摘要范围没有改变，
-新增子模块不使既有训练恢复点和文本缓存失效。原 `train`、默认文本 `evaluate` 与W&B命令保持兼容。
-从零运行 `run_full.sh` 时，在原文本流程之后会自动补跑框提示并合并报告。
+框提示实现位于 `hot3d_ft/boxeval/`，由根目录 `run.py` 分发。原训练和文本预测源码摘要范围没有改变，
+框提示子模块不改变已有训练恢复点和文本缓存的身份。原 `train`、默认文本 `evaluate` 与W&B命令保持兼容。
+标准全流程入口为 `run_full.sh`，由workflow.py统一调度；官方权重的两类评测均在训练前，微调后再完成两类评测，最后生成报告。
 
-本轮工具环境不能访问PPU，也不能写入 `/root`。自动测试与独立报告预览不等于全量PPU实验已经完成；
-请在原生Terminal执行顶部补跑命令，完整结果会写入指定的原报告。
+具体实施验证见 [VALIDATION.md](VALIDATION.md)。日常运行以状态文件和完整评分结果为准。
