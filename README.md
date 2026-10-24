@@ -43,12 +43,12 @@
 | 项目目录 | `/mnt/workspace/3dmood` |
 | 系统 / Python | Ubuntu 24.04，Python 3.12 |
 | PPU SDK / CUDA 兼容版本 | SDK 2.1，CUDA 13.0 |
-| PyTorch / torchvision | PPU 源中的 2.9.0 / 0.24.0 |
-| Triton | PPU 源中的 `3.5.0` |
+| PyTorch / torchvision | 基础镜像中的 PPU 构建 2.9.0 / 0.24.0，CUDA 13.0 |
+| Triton | 基础镜像中的 `3.5.0+gitcc5446cf` |
 | Vis4D | 1.0.0 |
 | 加速卡 | 当前实例可访问 1 张卡 |
 
-PPU 核心包使用镜像对应的阿里云 PPU 包源，模型下载沿用镜像配置的 `HF_ENDPOINT`。参见 [PAI-PPU 官方说明](https://help.aliyun.com/zh/pai/use-cases/pai-pg1-getting-started-best-practices)。
+PPU 核心包从当前基础镜像导出为本地 wheel，再安装到独立环境；这些包仍依赖镜像中的 PPU SDK。模型下载沿用镜像配置的 `HF_ENDPOINT`。参见 [PAI-PPU 官方说明](https://help.aliyun.com/zh/pai/use-cases/pai-pg1-getting-started-best-practices)。
 
 操作顺序：**准备环境 → 安装固定版本依赖 → 编译算子 → 下载模型 → 运行 Demo → 准备数据集与评测/训练。**
 
@@ -65,7 +65,7 @@ python -m pip install -e . --no-deps --no-build-isolation
 
 ## 首次配置环境
 
-本节用于从零部署。新环境使用 `/mnt/workspace/venvs/3d-mood-ppu-clean`，原有环境继续保留。新环境只安装项目所需的软件包，PPU 核心包从对应官方源安装。
+本节用于从零部署。新环境使用 `/mnt/workspace/venvs/3d-mood-ppu-clean`，原有环境继续保留。新环境单独安装依赖，PPU 核心包使用基础镜像导出的本地 wheel。
 
 现有环境的 Demo 已验证；新独立环境的步骤已核对命令语法与依赖声明，尚未完成实机重建验证。
 
@@ -75,11 +75,11 @@ python -m pip install -e . --no-deps --no-build-isolation
 
 ```bash
 cd /mnt/workspace/3dmood
-python --version
+/usr/local/bin/python3 --version
 cat /usr/local/PPU_SDK/release.yaml
 nvcc --version
 
-python - <<'PY'
+/usr/local/bin/python3 - <<'PY'
 import torch
 assert torch.cuda.is_available(), "基础镜像需要能够访问 PPU"
 p = torch.cuda.get_device_properties(0)
@@ -94,7 +94,14 @@ PY
 
 ### 2. 创建独立环境并固定版本
 
+先使用基础镜像的 Python 导出已验证的 PPU 核心包，保存在项目仓库之外。导出脚本保留安装文件、版本和平台标签，重建 wheel 的文件校验记录，并生成包含来源和 SHA-256 的 `manifest.json`。已有完整导出时可跳过导出命令；重新导出时使用新的空目录。
+
 ```bash
+cd /mnt/workspace/3dmood
+export MOOD_PPU_WHEELS=/mnt/workspace/ppu-wheels/3dmood-sdk2.1-cu130-py312
+/usr/local/bin/python3 -B scripts/export_ppu_wheels.py \
+  --output-dir "$MOOD_PPU_WHEELS"
+
 python -m venv /mnt/workspace/venvs/3d-mood-ppu-clean
 source /mnt/workspace/venvs/3d-mood-ppu-clean/bin/activate
 cd /mnt/workspace/3dmood
@@ -102,10 +109,10 @@ cd /mnt/workspace/3dmood
 export MOOD_PPU_INDEX=https://aiext-pypi.mirrors.aliyuncs.com/pg1-pip/ubuntu_cu130/simple/
 export MOOD_CONSTRAINTS="$VIRTUAL_ENV/3d-mood-constraints.txt"
 
-cat > "$MOOD_CONSTRAINTS" <<'EOF'
-torch==2.9.0
-torchvision==0.24.0
-triton==3.5.0
+cat > "$MOOD_CONSTRAINTS" <<EOF
+torch @ file://$MOOD_PPU_WHEELS/torch-2.9.0-cp312-cp312-linux_x86_64.whl
+torchvision @ file://$MOOD_PPU_WHEELS/torchvision-0.24.0-cp312-cp312-linux_x86_64.whl
+triton @ file://$MOOD_PPU_WHEELS/triton-3.5.0+gitcc5446cf-cp312-cp312-linux_x86_64.whl
 vis4d==1.0.0
 numpy==1.26.4
 pydantic==1.10.26
@@ -136,27 +143,32 @@ EOF
 python -m pip install --index-url "$MOOD_PPU_INDEX" \
   -c "$MOOD_CONSTRAINTS" setuptools wheel ninja
 
-python -m pip install --index-url "$MOOD_PPU_INDEX" \
-  -c "$MOOD_CONSTRAINTS" torch torchvision triton
-
-python - <<'PY'
-import torch
-import torchvision
-assert torch.cuda.is_available(), "新环境需要能够访问 PPU"
-print("PyTorch:", torch.__version__)
-print("torchvision:", torchvision.__version__)
-print("设备:", torch.cuda.get_device_name(0))
-PY
+python -m pip install --no-index --no-deps --force-reinstall \
+  "$MOOD_PPU_WHEELS/torch-2.9.0-cp312-cp312-linux_x86_64.whl" \
+  "$MOOD_PPU_WHEELS/torchvision-0.24.0-cp312-cp312-linux_x86_64.whl" \
+  "$MOOD_PPU_WHEELS/triton-3.5.0+gitcc5446cf-cp312-cp312-linux_x86_64.whl"
 
 python -m pip install --index-url "$MOOD_PPU_INDEX" \
   -c "$MOOD_CONSTRAINTS" \
   vis4d tensorboardX tensorboard protobuf chardet \
   -r requirements.txt
+
+python - <<'PY'
+import torch
+import torchvision
+from importlib.metadata import version
+assert torch.version.cuda == "13.0", "需要基础镜像导出的 PPU 构建"
+assert version("triton") == "3.5.0+gitcc5446cf"
+assert torch.cuda.is_available(), "新环境需要能够访问 PPU"
+print("PyTorch:", torch.__version__)
+print("torchvision:", torchvision.__version__)
+print("设备:", torch.cuda.get_device_name(0))
+PY
 ```
 
 上面的约束统一固定 Vis4D、日志库和网络依赖的版本；项目 `requirements.txt` 保持原样。版本依据为当前可运行环境及已核对的 [Vis4D](https://pypi.org/pypi/vis4d/1.0.0/json)、[TensorBoardX](https://pypi.org/pypi/tensorboardX/2.6.4/json)、[wandb](https://pypi.org/pypi/wandb/0.26.1/json) 和 [chardet](https://pypi.org/pypi/chardet/5.2.0/json) 发布元数据。这组约束用于本节的独立环境。
 
-Triton 固定为当前 PPU 源在此环境中列出的 `3.5.0`，满足 PyTorch 2.9.0 的 `triton==3.5.0` 依赖。该源的版本查询未列出 `3.5.0+gitcc5446cf`，因此新环境不再锁定这个带 Git 后缀的构建，以避免依赖解析失败。安装后仍需通过上面的设备检查验证 PPU 可用性。
+三个核心包在约束文件中固定到本地 wheel，防止后续安装依赖时改选同版本号的其他构建。仅指定 `torch==2.9.0` 和上述下载源，曾安装到 `2.9.0+cu128` 及 NVIDIA CUDA 12.8 运行库，随后在初始化 PPU 时失败；把 Triton 改成普通 `3.5.0` 不能解决这个构建不匹配问题。此处恢复基础镜像中的 Triton 构建，并在安装后检查 CUDA 构建版本和实际设备访问。设备检查需在能够访问 PPU 的 DSW 原生终端执行。
 
 ### 3. 编译算子并安装项目
 
