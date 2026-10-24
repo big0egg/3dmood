@@ -2,7 +2,7 @@
 set -euo pipefail
 
 project=/mnt/workspace/3dmood
-driver=/mnt/workspace/venvs/3d-mood-ppu/bin/python
+driver=/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python
 cd "$project"
 export PYTHONPATH="$project${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONDONTWRITEBYTECODE=1

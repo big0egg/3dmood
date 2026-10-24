@@ -52,10 +52,10 @@ PPU 核心包从当前基础镜像导出为本地 wheel，再安装到独立环�
 
 操作顺序：**准备环境 → 安装固定版本依赖 → 编译算子 → 下载模型 → 运行 Demo → 准备数据集与评测/训练。**
 
-已有 `/mnt/workspace/venvs/3d-mood-ppu` 环境可直接激活。项目移动到新目录后，先更新可编辑安装的路径，再进入“模型准备”：
+已有 `/mnt/workspace/venvs/3d-mood-ppu-clean` 环境可直接激活。项目移动到新目录后，先更新可编辑安装的路径，再进入“模型准备”：
 
 ```bash
-source /mnt/workspace/venvs/3d-mood-ppu/bin/activate
+source /mnt/workspace/venvs/3d-mood-ppu-clean/bin/activate
 cd /mnt/workspace/3dmood
 python -m pip install -e . --no-deps --no-build-isolation
 (cd /tmp && python -B -c "import opendet3d; print(opendet3d.__file__)")
@@ -65,7 +65,7 @@ python -m pip install -e . --no-deps --no-build-isolation
 
 ## 首次配置环境
 
-本节用于从零部署。新环境使用 `/mnt/workspace/venvs/3d-mood-ppu-clean`，原有环境继续保留。新环境单独安装依赖，PPU 核心包使用基础镜像导出的本地 wheel。
+本节用于从零部署。环境目录使用 `/mnt/workspace/venvs/3d-mood-ppu-clean`。新环境单独安装依赖，PPU 核心包使用基础镜像导出的本地 wheel。
 
 现有环境的 Demo 已验证；基础镜像已在 DSW 原生终端确认能够识别 PPU-ZW810E。新独立环境的核心包离线安装、CPU 张量计算、torchvision NMS、Vis4D trainer 导入及 `pip check` 已通过，实际 PPU 计算和完整实机重建尚未验证。
 
@@ -302,10 +302,10 @@ python scripts/demo.py && stat -c '%y %s %n' assets/demo/output.png
 
 ### 日常启动
 
-当前已部署环境使用下面的命令。首次配置创建的新环境，将第一行路径换为 `/mnt/workspace/venvs/3d-mood-ppu-clean/bin/activate`。
+当前环境使用 `/mnt/workspace/venvs/3d-mood-ppu-clean`，按下面的命令启动。
 
 ```bash
-source /mnt/workspace/venvs/3d-mood-ppu/bin/activate
+source /mnt/workspace/venvs/3d-mood-ppu-clean/bin/activate
 cd /mnt/workspace/3dmood
 export HF_HOME=/mnt/workspace/.cache/3d-mood/huggingface
 export TORCH_HOME=/mnt/workspace/.cache/3d-mood/torch
@@ -401,7 +401,7 @@ python -m vis4d.data.io.to_hdf5 -p hypersim_depth # 仅自行生成深度时需�
 
 ```bash
 cd /mnt/workspace/3dmood
-/mnt/workspace/venvs/3d-mood-ppu/bin/python -B -m ioutest benchmark \
+/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python -B -m ioutest benchmark \
   --report-root "$HOME/report/arkitscenes-three-models-v1"
 ```
 

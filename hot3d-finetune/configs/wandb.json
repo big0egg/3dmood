@@ -1,6 +1,6 @@
 {
   "enabled": true,
-  "python": "/mnt/workspace/venvs/3d-mood-ppu/bin/python",
+  "python": "/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python",
   "project": "hot3d-finetune",
   "entity": null,
   "group": null,

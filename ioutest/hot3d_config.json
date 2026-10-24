@@ -42,7 +42,7 @@
       }
     },
     "3dmood": {
-      "python": "/mnt/workspace/venvs/3d-mood-ppu/bin/python",
+      "python": "/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python",
       "adapter": "3dmood",
       "semantic_labels": true,
       "options": {

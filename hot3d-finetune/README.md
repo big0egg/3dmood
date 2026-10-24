@@ -65,7 +65,7 @@ nohup bash /mnt/workspace/3dmood/hot3d-finetune/run_full.sh \
 只查看任务顺序、不启动实验，可运行：
 
 ```bash
-/mnt/workspace/venvs/3d-mood-ppu/bin/python -B /mnt/workspace/3dmood/hot3d-finetune/workflow.py --dry-run
+/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python -B /mnt/workspace/3dmood/hot3d-finetune/workflow.py --dry-run
 ```
 
 查看日志：
@@ -201,7 +201,7 @@ W&B使用3D-MOOD环境中的SDK独立上传两个模型的日志，不往WildDet
 **1. 在DSW原生Terminal登录一次。** 按提示输入你自己的W&B API key：
 
 ```bash
-/mnt/workspace/venvs/3d-mood-ppu/bin/python -m wandb login
+/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python -m wandb login
 ```
 
 不要将key填入JSON或Git。登录后，在 `configs/wandb.json` 设置项目与团队：
@@ -209,7 +209,7 @@ W&B使用3D-MOOD环境中的SDK独立上传两个模型的日志，不往WildDet
 | 参数 | 默认值 | 含义与可填内容 |
 | --- | --- | --- |
 | `enabled` | `true` | `true` 开启、`false` 关闭上传；本地 `train.jsonl` 始终记录 |
-| `python` | `.../3d-mood-ppu/bin/python` | 已安装W&B的Python绝对路径，独立于正在训练的模型环境 |
+| `python` | `.../3d-mood-ppu-clean/bin/python` | 已安装W&B的Python绝对路径，独立于正在训练的模型环境 |
 | `project` | `hot3d-finetune` | W&B项目名，如 `hot3d-finetune`，非空字符串 |
 | `entity` | `null` | W&B账户或团队slug字符串；`null` 使用账户默认归属，不填写显示昵称 |
 | `group` | `null` | 同一实验的分组名；`null` 自动使用产物根目录名 |
@@ -226,7 +226,7 @@ W&B使用3D-MOOD环境中的SDK独立上传两个模型的日志，不往WildDet
 **2. 训练开始后查看网页地址和上传状态。**
 
 ```bash
-/mnt/workspace/venvs/3d-mood-ppu/bin/python -B /mnt/workspace/3dmood/hot3d-finetune/run.py wandb-status
+/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python -B /mnt/workspace/3dmood/hot3d-finetune/run.py wandb-status
 ```
 
 也可加 `--model 3dmood` 或 `--model wilddet3d`。使用自定义实验时加相同的 `--config`、`--root`。
@@ -258,8 +258,8 @@ loss是训练目标，不是AP；不同模型原生编码和损失尺度不同�
 若之前未登录、网络失败或离线运行，先登录、确认 `mode=online`，在该模型训练结束或退出后执行：
 
 ```bash
-/mnt/workspace/venvs/3d-mood-ppu/bin/python -B /mnt/workspace/3dmood/hot3d-finetune/run.py wandb-sync --model 3dmood
-/mnt/workspace/venvs/3d-mood-ppu/bin/python -B /mnt/workspace/3dmood/hot3d-finetune/run.py wandb-sync --model wilddet3d
+/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python -B /mnt/workspace/3dmood/hot3d-finetune/run.py wandb-sync --model 3dmood
+/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python -B /mnt/workspace/3dmood/hot3d-finetune/run.py wandb-sync --model wilddet3d
 ```
 
 它从本地日志新建W&B运行补传，不重新训练、不加载模型、不占用PPU。
@@ -279,7 +279,7 @@ Shell变量只为缩短命令，先在当前Terminal设置：
 
 ```bash
 FT=/mnt/workspace/3dmood/hot3d-finetune
-MOOD_PY=/mnt/workspace/venvs/3d-mood-ppu/bin/python
+MOOD_PY=/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python
 WILD_PY=/mnt/workspace/venvs/wilddet3d-ppu/bin/python
 DATA_PY=/mnt/workspace/venvs/hot3d-data/bin/python
 ARTIFACTS=/root/hot3d-finetune-v1
@@ -453,10 +453,10 @@ geometry忽略类别；semantic要求类别一致并按类平均，两者分别�
 
 ```bash
 cd /mnt/workspace/3dmood
-PYTHONDONTWRITEBYTECODE=1 /mnt/workspace/venvs/3d-mood-ppu/bin/python -B -m pytest -q --disable-warnings -p no:cacheprovider hot3d-finetune/tests/test_data.py hot3d-finetune/tests/test_training.py hot3d-finetune/tests/test_evaluation.py hot3d-finetune/tests/test_wandb_log.py
-PYTHONDONTWRITEBYTECODE=1 /mnt/workspace/venvs/3d-mood-ppu/bin/python -B -m pytest -q --disable-warnings -p no:cacheprovider hot3d-finetune/tests/test_native_coders.py -k 3dmood
+PYTHONDONTWRITEBYTECODE=1 /mnt/workspace/venvs/3d-mood-ppu-clean/bin/python -B -m pytest -q --disable-warnings -p no:cacheprovider hot3d-finetune/tests/test_data.py hot3d-finetune/tests/test_training.py hot3d-finetune/tests/test_evaluation.py hot3d-finetune/tests/test_wandb_log.py
+PYTHONDONTWRITEBYTECODE=1 /mnt/workspace/venvs/3d-mood-ppu-clean/bin/python -B -m pytest -q --disable-warnings -p no:cacheprovider hot3d-finetune/tests/test_native_coders.py -k 3dmood
 PYTHONDONTWRITEBYTECODE=1 /mnt/workspace/venvs/wilddet3d-ppu/bin/python -B -m pytest -q --disable-warnings -p no:cacheprovider hot3d-finetune/tests/test_native_coders.py -k wilddet3d
-PYTHONDONTWRITEBYTECODE=1 /mnt/workspace/venvs/3d-mood-ppu/bin/python -B -m pytest -q --disable-warnings -p no:cacheprovider hot3d-finetune/tests/test_box_evaluation.py
+PYTHONDONTWRITEBYTECODE=1 /mnt/workspace/venvs/3d-mood-ppu-clean/bin/python -B -m pytest -q --disable-warnings -p no:cacheprovider hot3d-finetune/tests/test_box_evaluation.py
 ```
 
 参考：[HOT3D数据格式与质量标记](https://github.com/facebookresearch/hot3d)、

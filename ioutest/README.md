@@ -133,7 +133,7 @@ UniPose9D 正式采样预算为 `num_points=1024`、`num_tuples=1000`、`num_ste
 
 ```bash
 cd /mnt/workspace/3dmood
-source /mnt/workspace/venvs/3d-mood-ppu/bin/activate
+source /mnt/workspace/venvs/3d-mood-ppu-clean/bin/activate
 ```
 
 下面所有命令都在这个终端、这个目录运行。启动程序会自动调用其他模型各自的环境，不需要手动切换镜像或环境。
@@ -194,7 +194,7 @@ tail -n 20 "$HOME/report/arkitscenes-three-models-v1/pilot/logs/3dmood.log"
 
 | `--models` 可填值 | 对应模型 | 输入 | 所用环境 / 日志名 |
 |---|---|---|---|
-| `3dmood` | 3D-MOOD | RGB、相机内参、固定 17 类提示词 | `3d-mood-ppu` / `3dmood.log` |
+| `3dmood` | 3D-MOOD | RGB、相机内参、固定 17 类提示词 | `3d-mood-ppu-clean` / `3dmood.log` |
 | `wilddet3d` | WildDet3D | RGB、相机内参、固定 17 类提示词 | `wilddet3d-ppu` / `wilddet3d.log` |
 | `cutr-rgb` | CuTR RGB | RGB、相机内参 | `ca1m-ppu` / `cutr-rgb.log` |
 | `cutr-rgbd` | CuTR RGB-D | RGB、相机内参、同帧 ARKit 深度 | `ca1m-ppu` / `cutr-rgbd.log` |

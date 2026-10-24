@@ -21,7 +21,7 @@
 
 ```bash
 FT=/mnt/workspace/3dmood/hot3d-finetune
-MOOD_PY=/mnt/workspace/venvs/3d-mood-ppu/bin/python
+MOOD_PY=/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python
 WILD_PY=/mnt/workspace/venvs/wilddet3d-ppu/bin/python
 DATA_PY=/mnt/workspace/venvs/hot3d-data/bin/python
 ARTIFACTS=/root/hot3d-finetune-v1

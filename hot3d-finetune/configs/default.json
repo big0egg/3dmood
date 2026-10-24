@@ -30,7 +30,7 @@
   "minimum_native_modeled_visibility": 0.1,
   "models": {
     "3dmood": {
-      "python": "/mnt/workspace/venvs/3d-mood-ppu/bin/python",
+      "python": "/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python",
       "project_root": "/mnt/workspace/3dmood",
       "checkpoint": "/mnt/workspace/.cache/3d-mood/torch/hub/checkpoints/gdino3d_swin-b_120e_omni3d_834c97.pt"
     },
