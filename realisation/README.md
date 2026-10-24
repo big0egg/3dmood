@@ -1,5 +1,53 @@
 # Cosmos-Transfer2.5：环境部署说明
 
+**当前 agentview 提示词实验：** 使用单视角全量入口，直接生成
+4,800 张通用提示词训练图、200 张逐帧提示词训练图、500 张通用提示词评测图，
+以及同一批 200 个训练状态的通用提示词对照。没有 20 组试生成阶段。
+新入口使用 `configs/realism/cosmos25_libero_agentview_prompt_v2.yaml` 模板，
+原始输入为 `/root/opendatasets/LIBERO_GT_v1`，所有实验产物写入
+`/root/robot-realism/agentview_prompt_v2/`。
+
+环境和权重准备好后，在 **DSW 原生 Terminal** 执行：
+
+```bash
+bash /mnt/workspace/3dmood/realisation/scripts/run_agentview_prompt_full.sh --background
+```
+
+程序会验证源数据恰好有 5,000 个训练状态和 500 个评测状态，保留场景隔离，
+按厨房 100／客厅 60／书房 40 固定 200 个训练状态。随后逐帧读取 RGB、实例掩码和
+可见标注，生成物体类别、可靠颜色及画面位置描述；不猜测动作或不可见物体。
+这属于基于观测证据自动组织的逐帧提示词，**不等同于人工逐图审核或视觉语言模型撰写**。
+提示词、来源摘要、划分和代码身份固定后，变化会拒绝续跑。
+
+旧权重缓存 `/tmp/robot-realism/cosmos25/cache` 会复制到
+`/root/robot-realism/cosmos25/cache`，保留原缓存，复用 Hugging Face 内部相对链接，
+核验复制内容。先完成权重下载，再启动本入口；不要在复制期间向旧缓存下载。
+复制后检查所有提示词含聊天包装的 token 长度不超过上游编码器的 512 上限。
+运行环境继续复用 `/tmp/robot-realism/cosmos25/venv/bin/python`。
+
+查看全量日志和阶段状态：
+
+```bash
+tail -n 60 -f /root/robot-realism/agentview_prompt_v2/runs/launch.log
+cat /root/robot-realism/agentview_prompt_v2/runs/suite_status.json
+cat /root/robot-realism/agentview_prompt_v2/runs/main/progress.json
+```
+
+阶段子进程日志位于 `runs/main/{doctor,render,validate}.log` 和
+`runs/paired_general/{doctor,render,validate}.log`；模型详细输出在对应 run 目录的
+`worker.log`。启动命令返回 PID 仅表示已提交启动；以状态和进度文件判断执行结果。
+中断后重跑同一条命令即可续跑，不同时启动两份。
+
+完成后，`datasets/main/` 为 5,500 张主数据，`datasets/paired_general/` 为 200 张对照。
+`manifests/train_mixed.jsonl` 是 4,800 通用＋200 逐帧训练入口，
+`manifests/train_all_general.jsonl` 是同样 4,800 通用＋200 通用对照训练入口，
+两者共用 `manifests/eval_general.jsonl`。200 组四列对照图及 500 张评测预览位于
+`previews/paired/`、`previews/eval/`，报告在 `reports/comparison.md`。
+`reports/paired_review.csv` 初始为空白，表示尚未人工审核；生成完成不代表继承 GT 已经视觉对齐。
+本入口不会自动上传 OSS，需要另行备份 `/root` 产物。
+
+以下保留原双视角流程的环境安装说明。
+
 本说明用于在当前 PPU-ZW810E 96 GB 实例中安装环境、准备模型权重。**按下面 4 步顺序执行，每一步完成后再进行下一步。**
 
 环境准备好以后，打开 [introduce.md](introduce.md)，按其中的步骤提供仿真数据并生成图片。

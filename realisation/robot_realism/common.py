@@ -28,13 +28,16 @@ def file_hash(path):
 
 
 def atomic_json(path, value):
+    atomic_text(path, json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n')
+
+
+def atomic_text(path, text):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=".writing-", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(value, stream, ensure_ascii=False, indent=2, allow_nan=False)
-            stream.write("\n")
+            stream.write(text)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(tmp, path)

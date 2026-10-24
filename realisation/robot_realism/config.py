@@ -62,10 +62,23 @@ def load_config(path, *, input_root=None, output_root=None):
             raise ValueError(f"{name} must be nonempty text")
     if type(config['selection']['seed']) is not int:
         raise ValueError('selection.seed must be an integer')
+    if 'prompting' in config:
+        policy = config['prompting']
+        if not isinstance(policy, dict) or policy.get('mode') not in ('mixed', 'paired_general'):
+            raise ValueError('prompting.mode must be mixed or paired_general')
+        if cameras != ['agentview']:
+            raise ValueError('The prompt experiment requires only agentview')
+        for key in ('selection_manifest', 'specific_manifest'):
+            if not isinstance(policy.get(key), str) or not policy[key].strip():
+                raise ValueError(f'prompting.{key} must be a path')
+            policy[key] = str((path.parent / Path(policy[key]).expanduser()).resolve())
     return config
 
 
 def config_id(config):
     value = deepcopy(config)
     value['output'] = {'root': value['output']['root']}
+    if 'prompting' in config:
+        from .prompting import prompt_inputs
+        value['prompt_inputs_sha256'] = prompt_inputs(config)
     return digest(value)

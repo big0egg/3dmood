@@ -7,7 +7,12 @@ from .common import PROJECT, read_json
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='LIBERO RGB realism with Cosmos-Transfer2.5; original GT stays read-only')
+    args_list = list(sys.argv[1:] if argv is None else argv)
+    if args_list and args_list[0] == 'prompt-suite':
+        from .prompt_suite import main as suite_main
+        return suite_main(args_list[1:])
+    parser = argparse.ArgumentParser(description='LIBERO RGB realism with Cosmos-Transfer2.5; original GT stays read-only. '
+                                    '全量单视角提示词实验：python -m robot_realism prompt-suite --help')
     commands = parser.add_subparsers(dest='command', required=True)
     for command in ('doctor', 'plan', 'prepare', 'render', 'validate', 'report', 'status'):
         child = commands.add_parser(command)
@@ -22,7 +27,7 @@ def main(argv=None):
             child.add_argument('--allow-partial', action='store_true')
         if command == 'report':
             child.add_argument('--max-previews', type=int, default=40)
-    args = parser.parse_args(argv)
+    args = parser.parse_args(args_list)
     try:
         from .config import load_config
         config = load_config(args.config, input_root=args.input, output_root=args.output)
@@ -50,7 +55,7 @@ def main(argv=None):
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
         return 2 if result.get('ready') is False or result.get('valid') is False else 0
     except KeyboardInterrupt:
-        print('已中断；同一版本可用 render --resume 恢复已提交双相机状态。', file=sys.stderr)
+        print('已中断；同一版本可用 render --resume 恢复已提交状态。', file=sys.stderr)
         return 130
     except Exception as error:
         print(f'失败：{error}', file=sys.stderr)

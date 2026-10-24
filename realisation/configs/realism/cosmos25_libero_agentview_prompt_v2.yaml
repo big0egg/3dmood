@@ -1,0 +1,47 @@
+# Full agentview experiment. The launcher freezes runtime copies under /root.
+schema_version: 1
+name: agentview_prompt_v2_main
+input:
+  root: /root/opendatasets/LIBERO_GT_v1
+  cameras: [agentview]
+output:
+  root: /root/robot-realism/agentview_prompt_v2/datasets/main
+  run_dir: /root/robot-realism/agentview_prompt_v2/runs/main
+  scratch: /root/robot-realism/agentview_prompt_v2/scratch/main
+runtime:
+  python: /tmp/robot-realism/cosmos25/venv/bin/python
+  cache: /root/robot-realism/cosmos25/cache
+  enable_guardrails: true
+  offload_guardrails: true
+generation:
+  controls: [depth]
+  resolution: '720'
+  steps: 35
+  guidance: 3
+  prompt: >-
+    A photorealistic RGB image of an indoor robot manipulation scene, recorded by a fixed external
+    camera for a robotics dataset. The visible robot arm, gripper, objects, furniture, and background
+    have physically plausible real-world materials and surface textures. The scene has natural indoor
+    illumination, realistic contact shadows, and restrained reflections. The entire manipulation
+    workspace is in focus. Follow the spatial structure of the provided depth control. Preserve the
+    robot configuration, gripper opening, object shapes, object locations, relative scale, camera
+    viewpoint, and occlusion order. Keep the existing scene layout and visible object arrangement.
+    Render the current static state with realistic surface appearance.
+  negative_prompt: >-
+    cartoon, illustration, stylized rendering, obvious CGI, plastic-looking surfaces, exaggerated
+    reflections, cinematic lighting, shallow depth of field, motion blur, distorted geometry,
+    deformed robot arm, duplicated gripper, extra robot arms, added objects, missing objects,
+    floating objects, changed camera viewpoint, watermark, overlaid text
+controls:
+  near_m: 0.05
+  far_m: 5.0
+  depth_weight: 1.0
+  edge_weight: 1.0
+  canny_low: 100
+  canny_high: 200
+selection:
+  seed: 20261022
+prompting:
+  mode: mixed
+  selection_manifest: /root/robot-realism/agentview_prompt_v2/manifests/selection.json
+  specific_manifest: /root/robot-realism/agentview_prompt_v2/prompts/specific.jsonl

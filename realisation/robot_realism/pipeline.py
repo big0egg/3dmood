@@ -8,6 +8,7 @@ from PIL import Image
 
 from .common import PROJECT, atomic_json, digest, file_hash, read_json, safe_child, source_identity, writer_lock
 from .controls import prepare_camera
+from .config import config_id
 from .dataset import bundle, verify_source
 from .planning import load_plan, plan, select
 
@@ -58,6 +59,8 @@ def verify_result(root, record, cameras, profile_id):
 
 
 def _prepare(config, frozen, records):
+    if frozen['config_id'] != config_id(config):
+        raise ValueError('Prompt files or configuration changed after planning')
     jobs = []
     scratch = Path(config['output']['scratch']) / frozen['plan_id']
     for index, record in enumerate(records, 1):
@@ -65,6 +68,10 @@ def _prepare(config, frozen, records):
         commit = verify_source(config['input']['root'], record, frozen['cameras'])
         if commit.get('plan_id') != frozen['source_plan_id'] or commit.get('profile_id') != frozen['source_profile_id']:
             raise ValueError('Source COMMIT identity differs from frozen realism plan')
+        assignment = frozen.get('prompt_assignments', {}).get(record['state_id'], {})
+        for name, expected in assignment.get('source_files_sha256', {}).items():
+            if commit['files_sha256'].get('agentview/' + name) != expected:
+                raise ValueError('Specific prompt source changed after planning')
         views = []
         for camera in frozen['cameras']:
             target = scratch / record['state_id'] / camera
@@ -74,7 +81,9 @@ def _prepare(config, frozen, records):
                     'max_frames': 1, 'num_video_frames_per_chunk': 1, 'num_conditional_frames': 0,
                     'resolution': config['generation']['resolution'], 'keep_input_resolution': True,
                     'num_steps': config['generation']['steps'], 'guidance': config['generation']['guidance'],
-                    'prompt': config['generation']['prompt'], 'negative_prompt': config['generation']['negative_prompt'],
+                    'prompt': frozen.get('prompt_assignments', {}).get(record['state_id'], {}).get(
+                        'prompt', config['generation']['prompt']),
+                    'negative_prompt': config['generation']['negative_prompt'],
                     'seed': seed}
             for key, hint in hints.items():
                 spec[key] = {'control_path': hint, 'control_weight': config['controls'][key + '_weight']}
@@ -137,6 +146,9 @@ def write_summary(config, frozen, profile_id, error=None):
              'accepted_images': sum(counts.values()), 'counts': dict(counts), 'targets': frozen['targets'],
              'accepted': accepted, 'last_error': error,
              'gt_status': 'inherited_simulation_gt_requires_visual_review'}
+    if 'prompt_assignments' in frozen:
+        value['prompt_groups'] = dict(Counter(frozen['prompt_assignments'][s]['group'] for s in accepted))
+        value['target_prompt_groups'] = frozen['prompt_groups']
     atomic_json(Path(config['output']['root']) / 'manifest.json', value)
     atomic_json(Path(config['output']['run_dir']) / 'progress.json', value)
     return value
@@ -190,7 +202,7 @@ def render(config, limit=None, resume=False):
             if code:
                 raise RuntimeError(f'Cosmos worker failed (exit {code}); see {log_path}')
             if any(not verify_result(config['output']['root'], r, frozen['cameras'], digest(profile)) for r in selected):
-                raise RuntimeError('Worker exited without committing every requested camera pair')
+                raise RuntimeError('Worker exited without committing every requested state and camera')
         except BaseException as exc:
             error = str(exc) or type(exc).__name__
             raise
@@ -200,7 +212,7 @@ def render(config, limit=None, resume=False):
 
 
 def commit_generated(config, frozen, profile_id, job, generated, runtime):
-    """Commit both cameras together; callable only with real worker outputs."""
+    """Commit all selected cameras together; callable only with real worker outputs."""
     record, cameras = job['record'], frozen['cameras']
     source = bundle(config['input']['root'], record)
     commit = verify_source(config['input']['root'], record, cameras)
@@ -259,6 +271,8 @@ def commit_generated(config, frozen, profile_id, job, generated, runtime):
                     'control_files_sha256': view['controls_sha256'],
                     'runtime_id': digest(runtime), 'runtime_identity_file': 'runtime_identity.json',
                     'upstream_output_format': 'JPEG; decoded and stored as PNG',
+                    'prompt_assignment': frozen.get('prompt_assignments', {}).get(record['state_id']),
+                    'prompt_inputs_sha256': frozen.get('prompt_inputs_sha256', {}),
                     'review_status': 'pending_visual_review'})
         for name in ('rgb.png', 'annotation.json', 'depth.npz', 'instance.png', 'render_meta.json'):
             p = folder / name

@@ -42,6 +42,12 @@ def validate(config, frozen, allow_partial=False):
                     if annotation.get(key) != original.get(key):
                         raise ValueError(f'Inherited annotation changed: {key}')
                 meta = read_json(folder / 'render_meta.json')
+                expected_prompt = frozen.get('prompt_assignments', {}).get(record['state_id'], {}).get(
+                    'prompt', config['generation']['prompt'])
+                if meta['inference']['prompt'] != expected_prompt:
+                    raise ValueError('Saved prompt differs from frozen prompt assignment')
+                if meta.get('prompt_inputs_sha256', {}) != frozen.get('prompt_inputs_sha256', {}):
+                    raise ValueError('Saved prompt manifest identity differs')
                 if meta['source_rgb_sha256'] != source_commit['files_sha256'][f'{cam}/rgb.png']:
                     raise ValueError('Source RGB provenance differs')
                 if meta.get('runtime_id') != digest(read_json(root / 'runtime_identity.json')):
@@ -126,7 +132,7 @@ def report(config, frozen, max_previews=40):
     if not rows:
         raise ValueError('No committed generated images; run real inference first')
     text = '# 写实化图片对照检查\n\n左：原图；中：Cosmos；右：绿色原实例边界和黄色原物体 3D 框叠加生成图。\n\n'
-    text += '**逐图检查物体增删、轮廓漂移、遮挡和双视角身份。绿色边界仅是对照，不证明新 RGB 的 3D GT 正确。**\n\n'
+    text += '**逐图检查物体增删、轮廓漂移和遮挡。绿色边界仅是对照，不证明新 RGB 的 3D GT 正确。**\n\n'
     text += '\n'.join(rows) + '\n'
     (directory / 'report.md').write_text(text, encoding='utf-8')
     return {'previews': len(rows), 'report': str(directory / 'report.md'), 'visual_review_required': True}

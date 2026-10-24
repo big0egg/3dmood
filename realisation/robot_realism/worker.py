@@ -23,7 +23,7 @@ def cached_weights(cache):
     cache = Path(cache)
     values = {}
     for path in sorted(cache.rglob('*')):
-        if path.is_file() and 'snapshots' in path.parts and path.suffix in ('.pt', '.bin', '.safetensors', '.json'):
+        if path.is_file() and 'snapshots' in path.parts and path.suffix in ('.pt', '.pth', '.bin', '.safetensors', '.json'):
             print(f'记录权重/配置摘要：{path.name}', flush=True)
             values[str(path.relative_to(cache))] = file_hash(path)
     if not values:

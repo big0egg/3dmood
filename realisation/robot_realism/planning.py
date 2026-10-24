@@ -9,6 +9,8 @@ from .dataset import source_records
 
 def plan(config):
     info, records = source_records(config)
+    from .prompting import resolve_assignments
+    records, assignments, prompt_hashes = resolve_assignments(config, info, records)
     identity = config_id(config)
     source = digest({'plan_id': info['plan_id'], 'profile_id': info['profile_id'],
                      'accepted': sorted(records, key=lambda r: r['state_id'])})
@@ -36,6 +38,11 @@ def plan(config):
              'cameras': config['input']['cameras'], 'records': ordered,
              'targets': {split: sum(r['split'] == split for r in records) * len(config['input']['cameras'])
                          for split in ('train', 'eval')}}
+    if assignments:
+        value['prompt_assignments'] = assignments
+        value['prompt_inputs_sha256'] = prompt_hashes
+        from collections import Counter
+        value['prompt_groups'] = dict(Counter(a['group'] for a in assignments.values()))
     value['plan_id'] = digest(value)
     atomic_json(path, value)
     return value
