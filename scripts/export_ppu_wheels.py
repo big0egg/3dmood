@@ -33,9 +33,14 @@ def export_wheel(dist, output_dir):
         for line in wheel_metadata.splitlines()
         if line.startswith("Tag: ")
     ]
-    if len(tags) != 1:
-        raise RuntimeError(f"Expected one platform tag for {dist.name}: {tags}")
-    wheel_name = f"{dist_info.name[:-10]}-{tags[0]}.whl"
+    tag_parts = [tag.split("-") for tag in tags]
+    if not tag_parts or any(len(parts) != 3 for parts in tag_parts):
+        raise RuntimeError(f"Invalid wheel tags for {dist.name}: {tags}")
+    if len({tuple(parts[:2]) for parts in tag_parts}) != 1:
+        raise RuntimeError(f"Unsupported Python/ABI tag combination: {tags}")
+    platforms = ".".join(dict.fromkeys(parts[2] for parts in tag_parts))
+    wheel_tag = "-".join([*tag_parts[0][:2], platforms])
+    wheel_name = f"{dist_info.name[:-10]}-{wheel_tag}.whl"
     destination = output_dir / wheel_name
     temporary = destination.with_suffix(".whl.tmp")
     if destination.exists():

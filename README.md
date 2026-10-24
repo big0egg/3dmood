@@ -67,7 +67,7 @@ python -m pip install -e . --no-deps --no-build-isolation
 
 本节用于从零部署。新环境使用 `/mnt/workspace/venvs/3d-mood-ppu-clean`，原有环境继续保留。新环境单独安装依赖，PPU 核心包使用基础镜像导出的本地 wheel。
 
-现有环境的 Demo 已验证；新独立环境的步骤已核对命令语法与依赖声明，尚未完成实机重建验证。
+现有环境的 Demo 已验证；基础镜像已在 DSW 原生终端确认能够识别 PPU-ZW810E。新独立环境的核心包离线安装、CPU 张量计算、torchvision NMS、Vis4D trainer 导入及 `pip check` 已通过，实际 PPU 计算和完整实机重建尚未验证。
 
 ### 1. 检查基础镜像
 
