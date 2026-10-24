@@ -1,49 +1,71 @@
 # Cosmos-Transfer2.5：环境部署说明
 
-**当前 agentview 提示词实验：** 使用单视角全量入口，直接生成
-4,800 张通用提示词训练图、200 张逐帧提示词训练图、500 张通用提示词评测图，
-以及同一批 200 个训练状态的通用提示词对照。没有 20 组试生成阶段。
-新入口使用 `configs/realism/cosmos25_libero_agentview_prompt_v2.yaml` 模板，
-原始输入为 `/root/opendatasets/LIBERO_GT_v1`，所有实验产物写入
-`/root/robot-realism/agentview_prompt_v2/`。
+**当前使用 v3 单视角全量入口：** 计划处理 4,800 张通用提示词训练图、
+200 张逐帧提示词训练图、500 张通用提示词评测图，以及同帧通用提示词对照 200 张，
+共 5,700 张。v3 从新目录开始生成，不导入旧 v2 的 75 张图片，没有试生成阶段。
 
-环境和权重准备好后，在 **DSW 原生 Terminal** 执行：
+在 **DSW 原生 Terminal** 执行：
 
 ```bash
-bash /mnt/workspace/3dmood/realisation/scripts/run_agentview_prompt_full.sh --background
+bash /mnt/workspace/3dmood/realisation/scripts/run_agentview_prompt_full_v3.sh --background
 ```
 
-程序会验证源数据恰好有 5,000 个训练状态和 500 个评测状态，保留场景隔离，
-按厨房 100／客厅 60／书房 40 固定 200 个训练状态。随后逐帧读取 RGB、实例掩码和
-可见标注，生成物体类别、可靠颜色及画面位置描述；不猜测动作或不可见物体。
-这属于基于观测证据自动组织的逐帧提示词，**不等同于人工逐图审核或视觉语言模型撰写**。
-提示词、来源摘要、划分和代码身份固定后，变化会拒绝续跑。
+模板为 `configs/realism/cosmos25_libero_agentview_prompt_v3.yaml`。输入是
+`/root/opendatasets/LIBERO_GT_v1`，实验产物统一写入
+`/root/robot-realism/agentview_prompt_v3/`，权重缓存复用
+`/root/robot-realism/cosmos25/cache`，解释器使用
+`/tmp/robot-realism/cosmos25/venv/bin/python`。初始化会核验并复用 v2 的分组与
+200 条逐帧提示词；没有旧清单时根据源 RGB、掩码和可见 GT 重新组织描述。
+提示词属于自动生成的观测描述，尚未人工逐条审核；含聊天包装的长度会检查不超过 512 tokens。
 
-旧权重缓存 `/tmp/robot-realism/cosmos25/cache` 会复制到
-`/root/robot-realism/cosmos25/cache`，保留原缓存，复用 Hugging Face 内部相对链接，
-核验复制内容。先完成权重下载，再启动本入口；不要在复制期间向旧缓存下载。
-复制后检查所有提示词含聊天包装的 token 长度不超过上游编码器的 512 上限。
-运行环境继续复用 `/tmp/robot-realism/cosmos25/venv/bin/python`。
+v3 显式使用：
 
-查看全量日志和阶段状态：
+```yaml
+execution:
+  guardrail_policy: record_and_skip
+```
+
+内容检查保持启用。明确的正面提示词、负面提示词或生成图拦截会先保存独立 JSON 记录，
+然后继续下一帧；没有成功图片和占位图片提交。普通模型、显存、文件、PPU 及检查器运行错误仍停止。
+拦截记录写入失败也会停止。重启会校验已成功和已拦截项，跳过它们，不自动改种子或重复尝试。
+
+查看日志及实时进度：
 
 ```bash
-tail -n 60 -f /root/robot-realism/agentview_prompt_v2/runs/launch.log
-cat /root/robot-realism/agentview_prompt_v2/runs/suite_status.json
-cat /root/robot-realism/agentview_prompt_v2/runs/main/progress.json
+tail -n 60 -f /root/robot-realism/agentview_prompt_v3/runs/launch.log
+cat /root/robot-realism/agentview_prompt_v3/runs/suite_status.json
+cat /root/robot-realism/agentview_prompt_v3/runs/main/progress.json
 ```
 
-阶段子进程日志位于 `runs/main/{doctor,render,validate}.log` 和
-`runs/paired_general/{doctor,render,validate}.log`；模型详细输出在对应 run 目录的
-`worker.log`。启动命令返回 PID 仅表示已提交启动；以状态和进度文件判断执行结果。
-中断后重跑同一条命令即可续跑，不同时启动两份。
+模型详细日志为 `runs/main/worker.log` 和 `runs/paired_general/worker.log`。
+启动返回 PID 表示已提交，具体是否运行成功看状态文件。中断后使用同一启动命令续跑，不同时启动两份。
+每帧成功或拦截后更新进度，显示 `planned_images`、`generated_images`、`blocked_images`、`pending_images`。
 
-完成后，`datasets/main/` 为 5,500 张主数据，`datasets/paired_general/` 为 200 张对照。
-`manifests/train_mixed.jsonl` 是 4,800 通用＋200 逐帧训练入口，
-`manifests/train_all_general.jsonl` 是同样 4,800 通用＋200 通用对照训练入口，
-两者共用 `manifests/eval_general.jsonl`。200 组四列对照图及 500 张评测预览位于
-`previews/paired/`、`previews/eval/`，报告在 `reports/comparison.md`。
-`reports/paired_review.csv` 初始为空白，表示尚未人工审核；生成完成不代表继承 GT 已经视觉对齐。
+独立拦截记录分别位于 `runs/main/blocked/` 和 `runs/paired_general/blocked/`，
+含原始分类原因、阶段、时间、源图路径、提示词、种子、来源与模型身份。
+`blocked.jsonl` 是由独立记录汇总的索引，中断后以原子保存的独立 JSON 为准。
+最终人工处理清单位于 `reports/blocked.csv`、`reports/blocked.jsonl`。
+
+成功与拦截合计达到计划数时，本轮处理结束；存在拦截时标记
+`status: finished_with_blocks`、`execution_complete: true`、`dataset_complete: false`。
+实际图片数是 5,700 减去拦截数。没有有效提交或拦截记录的缺帧仍属于错误，不会被校验忽略。
+单独校验可使用运行配置：
+
+```bash
+cd /mnt/workspace/3dmood/realisation
+/tmp/robot-realism/cosmos25/venv/bin/python -B -m robot_realism validate \
+  --config /root/robot-realism/agentview_prompt_v3/configs/main.yaml --allow-blocked
+```
+
+`datasets/main/`、`datasets/paired_general/` 保存实际成功的图片与继承标注。
+`manifests/train_general.jsonl`、`train_specific.jsonl`、`eval_general.jsonl`、`paired_general.jsonl`
+记录各组实际可用结果。`train_mixed.jsonl` 和 `train_all_general.jsonl` 仅使用共同可用的训练状态，
+保证两套训练入口的源状态一致。`paired_missing.jsonl` 列出缺少任一版本的对照状态。
+只有两侧均成功的状态才生成对照图；评测预览也仅包含实际成功图片。
+
+最终报告为 `reports/comparison.md`、`reports/summary.json`，
+人工审核表 `reports/paired_review.csv` 初始为空白，表示尚未审核。
+生成完成不证明新 RGB 与继承 GT 对齐。v2 数据保留在旧目录，本入口不做兼容迁移或导入旧图片。
 本入口不会自动上传 OSS，需要另行备份 `/root` 产物。
 
 以下保留原双视角流程的环境安装说明。

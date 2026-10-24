@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from cosmos_transfer2.guardrail_errors import rejection
 
 from cosmos_transfer2._src.imaginaire.auxiliary.guardrail.common import presets as guardrail_presets
 from cosmos_transfer2._src.imaginaire.flags import SMOKE
@@ -218,7 +219,7 @@ class Control2WorldInference:
                         if self.setup_args.keep_going:
                             return None
                         else:
-                            raise Exception(message)
+                            raise rejection('positive_prompt', self.text_guardrail_runner, message)
                     else:
                         log.success("Passed guardrail on prompt")
 
@@ -232,7 +233,7 @@ class Control2WorldInference:
                             if self.setup_args.keep_going:
                                 return None
                             else:
-                                raise Exception(message)
+                                raise rejection('negative_prompt', self.text_guardrail_runner, message)
                         else:
                             log.success("Passed guardrail on negative prompt")
                 elif self.text_guardrail_runner is None:
@@ -324,7 +325,8 @@ class Control2WorldInference:
                         if self.setup_args.keep_going:
                             return None
                         else:
-                            raise Exception("Guardrail blocked video2world generation.")
+                            raise rejection('output', self.video_guardrail_runner,
+                                            'Guardrail blocked video2world generation.')
                     else:
                         log.success("Passed guardrail on generated video")
 

@@ -122,9 +122,10 @@ class VideoContentSafetyFilter(ContentSafetyGuardrail):
         total_frame_count = 0
 
         self._to_cuda_if_offload()
-        for frame_number, frame in enumerate(frames):
-            total_frame_count += 1
-            try:
+        self.last_result = None
+        try:
+            for frame_number, frame in enumerate(frames):
+                total_frame_count += 1
                 pil_image = Image.fromarray(frame)
                 predicted_class = self.__infer(pil_image)
                 class_name = CLASS_IDX_TO_NAME.get(predicted_class, "Unknown")
@@ -135,9 +136,12 @@ class VideoContentSafetyFilter(ContentSafetyGuardrail):
                     log.warning(f"Unsafe frame detected in frame_number {frame_number}: {class_name}")
                     unsafe_frame_count += 1
 
-            except Exception as e:
-                log.warning(f"Warning: Failed to run safety classifier on frame_number {frame_number}. Exception: {e}")
-                continue
+        finally:
+            # A classifier/device failure must propagate instead of becoming a safe result or a rejection.
+            self._to_cpu_if_offload()
+
+        if total_frame_count == 0:
+            raise ValueError('No frames supplied to content safety classifier')
 
         if (unsafe_frame_count / total_frame_count) > (CUTOFF_UNSAFE_FRAMES_PERCENT / 100):
             is_safe = False
@@ -148,8 +152,10 @@ class VideoContentSafetyFilter(ContentSafetyGuardrail):
         video_data = {
             "is_safe": is_safe,
             "frame_scores": frame_scores,
+            "unsafe_frame_count": unsafe_frame_count,
+            "total_frame_count": total_frame_count,
         }
-        self._to_cpu_if_offload()
+        self.last_result = video_data
         log.debug(f"Frames data: {json.dumps(video_data, indent=4)}")
         return is_safe
 

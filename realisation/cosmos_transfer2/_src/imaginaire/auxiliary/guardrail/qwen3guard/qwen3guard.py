@@ -68,6 +68,9 @@ class Qwen3Guard(ContentSafetyGuardrail):
         safe_label_match = re.search(safe_pattern, content)
         label = safe_label_match.group(1) if safe_label_match else None
         categories = re.findall(category_pattern, content)
+        if label is None:
+            raise RuntimeError('Qwen3Guard returned no parseable safety label')
+        self.last_result = {'label': label, 'categories': categories}
         if label.lower() == "unsafe":
             return False, f"Prompt blocked by Qwen3Guard. Safety: {label}, Categories: {categories}"
         else:
@@ -79,7 +82,7 @@ class Qwen3Guard(ContentSafetyGuardrail):
             return self.extract_label_and_categories(prompt)
         except Exception as e:
             log.error(f"Unexpected error occurred when running Qwen3Guard guardrail: {e}")
-            return True, "Unexpected error occurred when running Qwen3Guard guardrail."
+            raise
 
 
 def parse_args():

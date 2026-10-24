@@ -10,17 +10,24 @@ from .pipeline import make_profile, verify_result
 from .common import digest
 
 
-def validate(config, frozen, allow_partial=False):
+def validate(config, frozen, allow_partial=False, allow_blocked=False):
+    from .blocked import read_blocked, skip_enabled
+    if allow_blocked and not skip_enabled(config):
+        raise ValueError('allow_blocked requires record_and_skip execution policy')
     root = Path(config['output']['root'])
     info = read_json(root / 'dataset_info.json')
     if info['profile_id'] != digest(make_profile(config, frozen)):
         raise ValueError('Realism code/config differs from saved results')
-    errors, counts = [], Counter()
+    errors, counts, blocked = [], Counter(), []
     accepted = []
     for record in frozen['records']:
         try:
             commit = verify_result(root, record, frozen['cameras'], info['profile_id'])
+            rejections = [read_blocked(config, frozen, info['profile_id'], record, camera)
+                          for camera in frozen['cameras']]
+            rejections = [value for value in rejections if value]
             if commit is None:
+                blocked.extend(rejections)
                 continue
             source_commit = verify_source(config['input']['root'], record, frozen['cameras'])
             if commit['source_commit_sha256'] != file_hash(bundle(config['input']['root'], record) / 'COMMIT.json'):
@@ -59,11 +66,19 @@ def validate(config, frozen, allow_partial=False):
         except Exception as error:
             errors.append({'state_id': record['state_id'], 'error': str(error)})
     complete = all(counts[s] == n for s, n in frozen['targets'].items())
-    if not accepted:
+    planned = sum(frozen['targets'].values())
+    accounted = sum(counts.values()) + len(blocked)
+    execution_complete = accounted == planned
+    if not accepted and not (allow_blocked and blocked):
         errors.append({'error': 'No generated committed images to validate'})
-    if not complete and not allow_partial:
+    if not complete and not allow_partial and not (allow_blocked and execution_complete):
         errors.append({'error': 'Full planned image counts not reached'})
+    if allow_blocked and not execution_complete and not allow_partial:
+        errors.append({'error': 'Some planned frames have neither a valid commit nor a blocked record'})
     result = {'valid': not errors, 'complete': complete, 'counts': dict(counts), 'targets': frozen['targets'],
+              'dataset_complete': complete, 'execution_complete': execution_complete and not errors,
+              'planned_images': planned, 'generated_images': sum(counts.values()),
+              'blocked_images': len(blocked), 'pending_images': planned-accounted,
               'errors': errors, 'visual_gt_alignment_certified': False,
               'scope': 'files, provenance, calibration and inherited GT integrity; generated RGB still needs visual review'}
     atomic_json(Path(config['output']['run_dir']) / 'validation.json', result)
@@ -129,10 +144,15 @@ def report(config, frozen, max_previews=40):
                 break
         if len(rows) >= max_previews:
             break
+    preview_count = len(rows)
     if not rows:
-        raise ValueError('No committed generated images; run real inference first')
+        from .blocked import ProgressTracker, skip_enabled
+        summary = ProgressTracker(config, frozen, info['profile_id']).summary()
+        if not (skip_enabled(config) and summary['execution_complete'] and summary['blocked_images']):
+            raise ValueError('No committed generated images; run real inference first')
+        rows.append('所有计划样本均被内容检查拦截；没有可展示的成功图片。请查看 blocked 清单。')
     text = '# 写实化图片对照检查\n\n左：原图；中：Cosmos；右：绿色原实例边界和黄色原物体 3D 框叠加生成图。\n\n'
     text += '**逐图检查物体增删、轮廓漂移和遮挡。绿色边界仅是对照，不证明新 RGB 的 3D GT 正确。**\n\n'
     text += '\n'.join(rows) + '\n'
     (directory / 'report.md').write_text(text, encoding='utf-8')
-    return {'previews': len(rows), 'report': str(directory / 'report.md'), 'visual_review_required': True}
+    return {'previews': preview_count, 'report': str(directory / 'report.md'), 'visual_review_required': True}

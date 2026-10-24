@@ -72,6 +72,15 @@ def load_config(path, *, input_root=None, output_root=None):
             if not isinstance(policy.get(key), str) or not policy[key].strip():
                 raise ValueError(f'prompting.{key} must be a path')
             policy[key] = str((path.parent / Path(policy[key]).expanduser()).resolve())
+    if 'execution' in config:
+        execution = config['execution']
+        if not isinstance(execution, dict) or execution.get('guardrail_policy') not in ('stop', 'record_and_skip'):
+            raise ValueError('execution.guardrail_policy must be stop or record_and_skip')
+        if execution['guardrail_policy'] == 'record_and_skip':
+            if cameras != ['agentview']:
+                raise ValueError('record_and_skip is supported only for agentview')
+            if not config['runtime']['enable_guardrails']:
+                raise ValueError('record_and_skip requires enabled guardrails')
     return config
 
 

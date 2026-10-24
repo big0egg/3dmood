@@ -50,9 +50,11 @@ class GuardrailRunner:
         self.generic_block_msg = generic_block_msg
         self.generic_safe_msg = generic_safe_msg if generic_safe_msg else "Prompt is safe"
         self.postprocessors = postprocessors
+        self.last_result = None
 
     def run_safety_check(self, input: Any) -> tuple[bool, str]:
         """Run the safety check on the input."""
+        self.last_result = None
         if not self.safety_models:
             log.warning("No safety models found, returning safe")
             return True, self.generic_safe_msg
@@ -63,6 +65,8 @@ class GuardrailRunner:
             safe, message = guardrail.is_safe(input)
             if not safe:
                 reasoning = self.generic_block_msg if self.generic_block_msg else f"{guardrail_name}: {message}"
+                self.last_result = {'guardrail': guardrail_name, 'message': reasoning,
+                                    'details': getattr(guardrail, 'last_result', None)}
                 return False, reasoning
         return True, self.generic_safe_msg
 

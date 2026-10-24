@@ -1,5 +1,16 @@
 # Cosmos-Transfer2.5：项目运行说明
 
+**当前 v3 实验使用单视角全量入口：**
+
+```bash
+bash /mnt/workspace/3dmood/realisation/scripts/run_agentview_prompt_full_v3.sh --background
+```
+
+该入口自动准备两份运行配置，处理主数据 5,500 张和同帧对照 200 张，明确的内容拦截记录后继续。
+所有产物位于 `/root/robot-realism/agentview_prompt_v3/`，旧 75 张不导入。
+状态、拦截清单和校验方式见 [README 的 v3 说明](README.md)。
+下文六步是原双视角流程；当前 v3 采用上面的全量入口。
+
 先按 [README.md](README.md) 完成环境安装和权重准备，再按本文的 6 步顺序运行。每一步看到“完成标志”后，再进行下一步。
 
 ## 输入需要提供什么

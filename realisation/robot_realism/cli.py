@@ -25,6 +25,8 @@ def main(argv=None):
             child.add_argument('--resume', action='store_true')
         if command == 'validate':
             child.add_argument('--allow-partial', action='store_true')
+            child.add_argument('--allow-blocked', action='store_true',
+                               help='允许明确登记的拦截项；未登记缺帧或文件损坏仍视为错误')
         if command == 'report':
             child.add_argument('--max-previews', type=int, default=40)
     args = parser.parse_args(args_list)
@@ -44,14 +46,14 @@ def main(argv=None):
         elif args.command == 'status':
             path = Path(config['output']['run_dir']) / 'progress.json'
             if path.exists():
-                result = {k: v for k, v in read_json(path).items() if k != 'accepted'}
+                result = {k: v for k, v in read_json(path).items() if k not in ('accepted', 'blocked')}
             else:
                 result = {'status': 'not_started', 'accepted_images': 0, 'run_dir': config['output']['run_dir']}
         else:
             from .planning import load_plan
             from .reporting import validate, report
             frozen = load_plan(config)
-            result = validate(config, frozen, args.allow_partial) if args.command == 'validate' else report(config, frozen, args.max_previews)
+            result = validate(config, frozen, args.allow_partial, args.allow_blocked) if args.command == 'validate' else report(config, frozen, args.max_previews)
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
         return 2 if result.get('ready') is False or result.get('valid') is False else 0
     except KeyboardInterrupt:

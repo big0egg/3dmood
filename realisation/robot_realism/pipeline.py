@@ -1,4 +1,3 @@
-from collections import Counter
 from pathlib import Path
 import os
 import shutil
@@ -134,28 +133,13 @@ def initialise_output(config, frozen, profile, resume):
 
 
 def write_summary(config, frozen, profile_id, error=None):
-    accepted, counts = {}, Counter()
-    for record in frozen['records']:
-        commit = verify_result(config['output']['root'], record, frozen['cameras'], profile_id)
-        if commit:
-            accepted[record['state_id']] = record
-            counts[record['split']] += len(frozen['cameras'])
-    complete = all(counts[s] == n for s, n in frozen['targets'].items())
-    value = {'plan_id': frozen['plan_id'], 'profile_id': profile_id,
-             'status': 'failed' if error else 'complete' if complete else 'partial',
-             'accepted_images': sum(counts.values()), 'counts': dict(counts), 'targets': frozen['targets'],
-             'accepted': accepted, 'last_error': error,
-             'gt_status': 'inherited_simulation_gt_requires_visual_review'}
-    if 'prompt_assignments' in frozen:
-        value['prompt_groups'] = dict(Counter(frozen['prompt_assignments'][s]['group'] for s in accepted))
-        value['target_prompt_groups'] = frozen['prompt_groups']
-    atomic_json(Path(config['output']['root']) / 'manifest.json', value)
-    atomic_json(Path(config['output']['run_dir']) / 'progress.json', value)
-    return value
+    from .blocked import ProgressTracker
+    return ProgressTracker(config, frozen, profile_id).flush(error, full=True)
 
 
 def render(config, limit=None, resume=False):
     from .doctor import doctor
+    from .blocked import ProgressTracker
     frozen = load_plan(config)
     selected = select(frozen, limit)
     with writer_lock(config['output']['run_dir']):
@@ -167,15 +151,17 @@ def render(config, limit=None, resume=False):
                 raise ValueError('Realism dataset already exists; use --resume')
             if info['profile_id'] != digest(profile):
                 raise ValueError('Realism profile differs; use original version or a new output and run_dir')
-        pending = [r for r in selected if not verify_result(config['output']['root'], r, frozen['cameras'], digest(profile))]
+        tracker = ProgressTracker(config, frozen, digest(profile))
+        pending = [r for r in selected if not tracker.is_done(r)]
         if not pending:
             summary = write_summary(config, frozen, digest(profile))
-            return {k: v for k, v in summary.items() if k != 'accepted'}
+            return {k: v for k, v in summary.items() if k not in ('accepted', 'blocked')}
         check = doctor(config)
         if not check['ready']:
             raise ValueError('Cosmos runtime is not ready; inspect doctor.json before rendering')
         jobs = _prepare(config, frozen, pending)
         initialise_output(config, frozen, profile, resume)
+        tracker.flush()
         request_path = Path(config['output']['run_dir']) / 'worker_request.json'
         atomic_json(request_path, {'config': config, 'plan': frozen, 'profile': profile, 'jobs': jobs})
         cmd = [config['runtime']['python'], '-B', '-m', 'robot_realism.worker', str(request_path)]
@@ -201,14 +187,15 @@ def render(config, limit=None, resume=False):
                     raise
             if code:
                 raise RuntimeError(f'Cosmos worker failed (exit {code}); see {log_path}')
-            if any(not verify_result(config['output']['root'], r, frozen['cameras'], digest(profile)) for r in selected):
-                raise RuntimeError('Worker exited without committing every requested state and camera')
+            finished = ProgressTracker(config, frozen, digest(profile))
+            if any(not finished.is_done(r) for r in selected):
+                raise RuntimeError('Worker exited with unaccounted states: neither committed nor explicitly blocked')
         except BaseException as exc:
             error = str(exc) or type(exc).__name__
             raise
         finally:
             summary = write_summary(config, frozen, digest(profile), error)
-        return {k: v for k, v in summary.items() if k != 'accepted'}
+        return {k: v for k, v in summary.items() if k not in ('accepted', 'blocked')}
 
 
 def commit_generated(config, frozen, profile_id, job, generated, runtime):

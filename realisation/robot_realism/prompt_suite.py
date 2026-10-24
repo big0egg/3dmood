@@ -20,7 +20,7 @@ from .planning import load_plan
 from .prompting import (GROUP_COUNTS, build_selection,
                         build_specific_row, write_jsonl)
 
-DEFAULT_ROOT = Path('/root/robot-realism/agentview_prompt_v2')
+DEFAULT_ROOT = Path('/root/robot-realism/agentview_prompt_v3')
 DEFAULT_CACHE = Path('/root/robot-realism/cosmos25/cache')
 OLD_CACHE = Path('/tmp/robot-realism/cosmos25/cache')
 
@@ -85,10 +85,10 @@ def migrate_cache(source, target):
                 os.replace(temporary, dst)
 
 
-def initialize(root, source, python, cache, template=None):
+def initialize(root, source, python, cache, template=None, reuse_from=None):
     import yaml
     root = Path(root)
-    base = load_config(template or PROJECT / 'configs/realism/cosmos25_libero_agentview_prompt_v2.yaml',
+    base = load_config(template or PROJECT / 'configs/realism/cosmos25_libero_agentview_prompt_v3.yaml',
                        input_root=source)
     base['input']['cameras'] = ['agentview']
     base['runtime']['python'] = os.path.abspath(python)
@@ -100,7 +100,8 @@ def initialize(root, source, python, cache, template=None):
                    for name in ('prompting.py', 'prompt_suite.py')}
     identity = {'selection_id': selection['selection_id'], 'input': base['input'],
                 'runtime': base['runtime'], 'generation': base['generation'],
-                'controls': base['controls'], 'source_code_sha256': source_code}
+                'controls': base['controls'], 'execution': base.get('execution', {}),
+                'source_code_sha256': source_code}
     freeze_json(root / 'experiment.json', identity)
     selection_path = root / 'manifests/selection.json'
     freeze_json(selection_path, selection)
@@ -109,6 +110,20 @@ def initialize(root, source, python, cache, template=None):
     specific_path = root / 'prompts/specific.jsonl'
     rows = []
     existing = {}
+    if not specific_path.exists() and reuse_from and Path(reuse_from).is_dir():
+        from .prompting import read_selection
+        previous_root = Path(reuse_from)
+        if read_selection(previous_root/'manifests/selection.json') != selection:
+            raise ValueError('Previous selection differs; refusing to change the selected 200 frames')
+        for name, expected in [('generic', generic), ('negative', negative)]:
+            if (previous_root/'prompts'/f'{name}.txt').read_text().strip() != expected.strip():
+                raise ValueError(f'Previous {name} prompt differs')
+        import json
+        previous_rows = [json.loads(line) for line in (previous_root/'prompts/specific.jsonl').read_text().splitlines() if line]
+        existing = {r['state_id']: r for r in previous_rows}
+        if (len(existing) != len(chosen) or len(previous_rows) != len(existing)
+                or set(existing) != {r['state_id'] for r in chosen}):
+            raise ValueError('Previous specific prompt manifest must contain exactly 200 unique entries')
     if specific_path.exists():
         import json
         previous = [json.loads(line) for line in specific_path.read_text().splitlines() if line]
@@ -138,7 +153,7 @@ def initialize(root, source, python, cache, template=None):
     configs = {}
     for name, mode in [('main', 'mixed'), ('paired_general', 'paired_general')]:
         config = deepcopy(base)
-        config['name'] = 'agentview_prompt_v2_' + name
+        config['name'] = base['name'].removesuffix('_main') + '_' + name
         config['output'] = {'root': str(root / 'datasets' / name),
                             'run_dir': str(root / 'runs' / name),
                             'scratch': str(root / 'scratch' / name)}
@@ -220,55 +235,80 @@ def comparison_panel(source, generic, specific, mask_path, target):
 
 
 def export_results(root, configs):
-    from .pipeline import verify_result
+    from .blocked import ProgressTracker, blocked_path
     root = Path(root)
     rows = {name: [] for name in [*GROUP_COUNTS, 'paired_general']}
-    metas = {}
+    blocked_counts = {name: 0 for name in rows}
+    planned_counts = {name: 0 for name in rows}
+    blocked_rows, metas = [], {}
     for name, path in configs.items():
         config = load_config(path)
         frozen = load_plan(config)
         info = read_json(Path(config['output']['root']) / 'dataset_info.json')
+        tracker = ProgressTracker(config, frozen, info['profile_id'])
+        if not tracker.summary()['execution_complete']:
+            raise ValueError('Cannot export: some frames have neither a valid commit nor a blocked record')
         runtime = read_json(Path(config['output']['root']) / 'runtime_identity.json')
-        metas[name] = {'runtime': runtime, 'frames': {}}
+        metas[name] = {'runtime': runtime, 'frames': {}, 'blocked': tracker.blocked}
+        run_blocked = []
         for record in frozen['records']:
-            if not verify_result(config['output']['root'], record, ['agentview'], info['profile_id']):
-                raise ValueError('Cannot export an incomplete experiment')
-            folder = bundle(config['output']['root'], record) / 'agentview'
-            meta = read_json(folder / 'render_meta.json')
             state_id = record['state_id']
             assignment = frozen['prompt_assignments'][state_id]
+            group = assignment['group']
+            planned_counts[group] += 1
+            if state_id in tracker.blocked:
+                rejection = tracker.blocked[state_id]
+                blocked_counts[group] += 1
+                run_blocked.append(rejection)
+                blocked_rows.append(dict(rejection, variant=name,
+                    blocked_record_path=str(blocked_path(config, record, 'agentview'))))
+                continue
+            folder = bundle(config['output']['root'], record) / 'agentview'
+            meta = read_json(folder / 'render_meta.json')
             if meta['inference']['prompt'] != assignment['prompt']:
                 raise ValueError('Generated prompt differs from frozen plan')
             metas[name]['frames'][state_id] = (record, folder, meta)
-            rows[assignment['group']].append({'state_id': state_id, 'camera': 'agentview',
-                'split': record['split'], 'scene_id': record['scene_id'], 'group': assignment['group'],
+            rows[group].append({'state_id': state_id, 'camera': 'agentview',
+                'split': record['split'], 'scene_id': record['scene_id'], 'group': group,
                 'rgb_path': str(folder / 'rgb.png'), 'annotation_path': str(folder / 'annotation.json'),
                 'depth_path': str(folder / 'depth.npz'), 'instance_path': str(folder / 'instance.png'),
                 'render_meta_path': str(folder / 'render_meta.json'), 'seed': meta['inference']['seed'],
                 'prompt': assignment['prompt'], 'source_rgb_sha256': meta['source_rgb_sha256'],
                 'gt_status': 'inherited_simulation_gt_requires_visual_review'})
+        write_jsonl(Path(config['output']['run_dir'])/'blocked.jsonl', run_blocked)
     expected = {**GROUP_COUNTS, 'paired_general': GROUP_COUNTS['train_specific']}
-    if {k: len(v) for k, v in rows.items()} != expected:
-        raise ValueError('Final groups do not equal 4800/200/500/200')
+    if planned_counts != expected or any(len(rows[k])+blocked_counts[k] != n for k, n in expected.items()):
+        raise ValueError('Group coverage must account for every planned frame: success or explicit block')
     if metas['main']['runtime'] != metas['paired_general']['runtime']:
         raise ValueError('Paired generations used different runtime/checkpoint identities')
+    generated = sum(map(len, rows.values()))
+    planned = sum(expected.values())
     report_lines = ['# Agentview 提示词对照报告', '',
-        '主数据 5,500 张，对照 200 张。所有逐帧描述来自源 RGB、实例掩码和可见标注；未人工审核。', '',
-        '原始仿真图 / 通用提示词 / 逐帧提示词 / 原实例边界叠加逐帧结果。',
+        f'计划 {planned} 张；实际成功 {generated} 张；内容拦截 {len(blocked_rows)} 张；未处理 0 张。',
+        '逐帧描述来自源 RGB、实例掩码和可见标注，尚未人工审核。', '',
+        '成对图片：原始仿真图 / 通用提示词 / 逐帧提示词 / 原实例边界叠加逐帧结果。',
         '边界叠加仅用于检查，不证明生成 RGB 与继承 GT 对齐。', '']
     review = io.StringIO()
     writer = csv.writer(review)
     writer.writerow(['state_id', 'scene_id', 'realism_preference', 'generic_semantics_ok',
                      'specific_semantics_ok', 'generic_geometry_ok', 'specific_geometry_ok', 'notes'])
-    for row in sorted(rows['train_specific'], key=lambda r: r['state_id']):
-        state_id = row['state_id']
+    main_config = load_config(configs['main'])
+    selection = read_json(main_config['prompting']['selection_manifest'])
+    paired_ids, missing_pairs = set(), []
+    for state_id in sorted(selection['groups']['train_specific']):
+        if state_id not in metas['main']['frames'] or state_id not in metas['paired_general']['frames']:
+            missing_pairs.append({'state_id': state_id,
+                'specific_status': 'generated' if state_id in metas['main']['frames'] else 'blocked',
+                'generic_status': 'generated' if state_id in metas['paired_general']['frames'] else 'blocked'})
+            continue
         record, folder, specific = metas['main']['frames'][state_id]
         _, general_folder, general = metas['paired_general']['frames'][state_id]
         if (specific['source_rgb_sha256'] != general['source_rgb_sha256']
                 or specific['control_files_sha256'] != general['control_files_sha256']
                 or not paired_specs_match(specific['inference'], general['inference'])):
             raise ValueError(f'Paired controls/seed/parameters differ: {state_id}')
-        source = bundle(load_config(configs['main'])['input']['root'], record) / 'agentview'
+        paired_ids.add(state_id)
+        source = bundle(main_config['input']['root'], record) / 'agentview'
         image = root / 'previews/paired' / (state_id + '.jpg')
         comparison_panel(source/'rgb.png', general_folder/'rgb.png', folder/'rgb.png',
                          source/'instance.png', image)
@@ -278,28 +318,48 @@ def export_results(root, configs):
                             f'[提示词](prompts/{state_id}.txt)')
         writer.writerow([state_id, record['scene_id'], '', '', '', '', '', ''])
     from .reporting import report
-    # Export every eval frame for review without using eval results to tune prompts.
-    main_config = load_config(configs['main'])
-    frozen = load_plan(main_config)
-    report(main_config, frozen, max_previews=40)
+    report(main_config, load_plan(main_config), max_previews=40)
     for row in rows['eval_general']:
         state_id = row['state_id']
         record, folder, _ = metas['main']['frames'][state_id]
         source = bundle(main_config['input']['root'], record) / 'agentview'
-        image = root / 'previews/eval' / (state_id + '.jpg')
-        comparison_panel(source/'rgb.png', folder/'rgb.png', None, source/'instance.png', image)
+        comparison_panel(source/'rgb.png', folder/'rgb.png', None, source/'instance.png',
+                         root/'previews/eval'/f'{state_id}.jpg')
     for name, values in rows.items():
-        write_jsonl(root / 'manifests' / (name + '.jsonl'), sorted(values, key=lambda r: r['state_id']))
-    write_jsonl(root/'manifests/train_all_general.jsonl', rows['train_general']+rows['paired_general'])
-    write_jsonl(root/'manifests/train_mixed.jsonl', rows['train_general']+rows['train_specific'])
+        write_jsonl(root/'manifests'/f'{name}.jsonl', sorted(values, key=lambda r: r['state_id']))
+    # Both training experiments use exactly the same available source states.
+    general_train = rows['train_general'] + [r for r in rows['paired_general'] if r['state_id'] in paired_ids]
+    mixed_train = rows['train_general'] + [r for r in rows['train_specific'] if r['state_id'] in paired_ids]
+    write_jsonl(root/'manifests/train_all_general.jsonl', general_train)
+    write_jsonl(root/'manifests/train_mixed.jsonl', mixed_train)
+    write_jsonl(root/'manifests/paired_missing.jsonl', missing_pairs)
+    write_jsonl(root/'reports/blocked.jsonl', blocked_rows)
+    blocked_csv = io.StringIO()
+    bw = csv.writer(blocked_csv)
+    bw.writerow(['variant', 'state_id', 'camera', 'split', 'group', 'stage', 'reason', 'created_utc',
+                 'seed', 'source_rgb_path', 'blocked_record_path', 'resolution_status'])
+    for row in blocked_rows:
+        bw.writerow([row.get(k, '') for k in ['variant', 'state_id', 'camera', 'split', 'group', 'stage',
+                     'reason', 'created_utc']] + [row['context']['seed']] +
+                    [row.get(k, '') for k in ['source_rgb_path', 'blocked_record_path', 'resolution_status']])
+    atomic_text(root/'reports/blocked.csv', blocked_csv.getvalue())
     atomic_text(root/'reports/paired_review.csv', review.getvalue())
-    report_lines += ['', '500 张评测图预览位于 `../previews/eval/`。',
-                     '人工审核表为 `paired_review.csv`；空白表示尚未审核。']
+    report_lines += ['', f'完整成对对照 {len(paired_ids)} 组；缺少至少一侧的状态 {len(missing_pairs)} 个。',
+        f'两套对照训练入口各有 {len(mixed_train)} 个相同源状态。',
+        f'实际可用评测图片 {len(rows["eval_general"])} 张，预览位于 `../previews/eval/`。',
+        '拦截清单：[blocked.csv](blocked.csv)；每条记录保留提示词、种子和源图位置。',
+        '人工审核表为 `paired_review.csv`；空白表示尚未审核。']
     atomic_text(root/'reports/comparison.md', '\n'.join(report_lines)+'\n')
-    summary = {'complete': True, 'generated_images': sum(expected.values()), 'counts': expected,
-               'visual_gt_alignment_certified': False, 'visual_review_status': 'pending',
-               'prompt_authoring': 'per-frame RGB/mask/GT grounded descriptions, not VLM or manual captions',
-               'report': str(root/'reports/comparison.md')}
+    complete = len(blocked_rows) == 0
+    summary = {'complete': complete, 'dataset_complete': complete, 'execution_complete': True,
+        'status': 'complete' if complete else 'finished_with_blocks',
+        'planned_images': planned, 'generated_images': generated, 'blocked_images': len(blocked_rows),
+        'pending_images': 0, 'counts': {k: len(v) for k, v in rows.items()},
+        'blocked_counts': blocked_counts, 'planned_counts': expected,
+        'comparison_pairs': len(paired_ids), 'comparison_training_samples': len(mixed_train),
+        'visual_gt_alignment_certified': False, 'visual_review_status': 'pending',
+        'prompt_authoring': 'per-frame RGB/mask/GT grounded descriptions, not VLM or manual captions',
+        'report': str(root/'reports/comparison.md')}
     atomic_json(root/'reports/summary.json', summary)
     return summary
 
@@ -326,6 +386,9 @@ def main(argv=None):
     parser.add_argument('--cache', type=Path, default=DEFAULT_CACHE)
     parser.add_argument('--cache-source', type=Path, default=OLD_CACHE)
     parser.add_argument('--template', type=Path, help='开始新实验时使用的配置模板')
+    parser.add_argument('--reuse-prompts-from', type=Path,
+                        default=Path('/root/robot-realism/agentview_prompt_v2'),
+                        help='核验并复用旧分组和提示词，不导入旧生成图片')
     parser.add_argument('--setup-only', action='store_true', help='只准备清单、逐帧提示词和配置')
     args = parser.parse_args(argv)
     root, cache = args.root.expanduser().resolve(), args.cache.expanduser().resolve()
@@ -340,7 +403,7 @@ def main(argv=None):
     try:
         with writer_lock(root/'runs'):
             acquired = True
-            configs = initialize(root, source, args.python, cache, args.template)
+            configs = initialize(root, source, args.python, cache, args.template, args.reuse_prompts_from)
             # Validate exact prompt membership and bind prompt content before any model loads.
             from .planning import plan
             for config in configs.values():
@@ -354,10 +417,11 @@ def main(argv=None):
                 for config in configs.values():
                     run_stage(root, config, 'doctor')
                     run_stage(root, config, 'render', ['--resume'])
-                    run_stage(root, config, 'validate')
+                    from .blocked import skip_enabled
+                    run_stage(root, config, 'validate', ['--allow-blocked'] if skip_enabled(load_config(config)) else [])
                 atomic_json(root/'runs/suite_status.json', {'stage': 'export_reports', 'complete': False})
                 result = export_results(root, configs)
-                atomic_json(root/'runs/suite_status.json', dict(result, stage='complete'))
+                atomic_json(root/'runs/suite_status.json', dict(result, stage=result['status']))
         import json
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

@@ -63,11 +63,31 @@ def main(request_path):
                           offload_guardrail_models=config['runtime']['offload_guardrails'],
                           context_parallel_size=1, keep_going=False, compile_tokenizer='none')
     inference = Control2WorldInference(args, batch_hint_keys=modes)
-    runtime = previous
-    restored_cache_verified = previous is None
+    # Capture provenance even when the very first frame is blocked.
+    if previous:
+        for relative, expected in previous['cached_files_sha256'].items():
+            path = Path(config['runtime']['cache']) / relative
+            if not path.is_file() or file_hash(path) != expected:
+                raise ValueError(f'Cached checkpoint/config changed or disappeared: {path}')
+        runtime = previous
+    else:
+        runtime = {'stack': stack, 'cached_files_sha256': cached_weights(config['runtime']['cache']),
+                   'upstream_model': args.model, 'source_code_sha256': profile['source_code_sha256']}
+        atomic_json(runtime_path, runtime)
+    process_jobs(config, frozen, profile, jobs, inference, runtime, InferenceArguments)
+
+
+def process_jobs(config, frozen, profile, jobs, inference, runtime, sample_type):
+    """Run real inference in production; callable with isolated fixtures in unit tests."""
+    from cosmos_transfer2.guardrail_errors import GuardrailBlockedError
+    from .blocked import ProgressTracker, record_blocked, skip_enabled
+    from .pipeline import commit_generated
+    profile_id = digest(profile)
+    tracker = ProgressTracker(config, frozen, profile_id)
+    modes = config['generation']['controls']
     for number, job in enumerate(jobs, 1):
         record = job['record']
-        if verify_result(config['output']['root'], record, frozen['cameras'], profile_id):
+        if tracker.is_done(record):
             continue
         try:
             generated = {}
@@ -78,24 +98,26 @@ def main(request_path):
                 for key, expected in view['controls_sha256'].items():
                     if file_hash(spec[key]['control_path']) != expected:
                         raise ValueError('Control hint changed before generation')
-                sample = InferenceArguments(**spec)
-                paths = inference.generate([sample], output_dir=native_output)
+                try:
+                    paths = inference.generate([sample_type(**spec)], output_dir=
+                        Path(config['output']['scratch']) / frozen['plan_id'] / 'native_output')
+                except GuardrailBlockedError as rejection:
+                    if not skip_enabled(config):
+                        raise
+                    record_blocked(config, frozen, profile_id, job, view, rejection, runtime)
+                    tracker.rejected(record)
+                    tracker.flush()
+                    print(f"内容拦截 [{number}/{len(jobs)}] {record['state_id']} "
+                          f"stage={rejection.stage}: {rejection.reason}；已记录，继续下一帧", flush=True)
+                    break
                 if len(paths) != 1 or not Path(paths[0]).is_file():
                     raise RuntimeError('Cosmos did not produce an image; no placeholder will be saved')
                 generated[view['camera']] = paths[0]
-            if not restored_cache_verified:
-                # Let pinned upstream downloads restore missing cache files,
-                # then verify exact content before committing any new image.
-                for relative, expected in previous['cached_files_sha256'].items():
-                    path = Path(config['runtime']['cache']) / relative
-                    if not path.is_file() or file_hash(path) != expected:
-                        raise ValueError(f'Cached checkpoint/config changed or disappeared: {path}')
-                restored_cache_verified = True
-            if runtime is None:
-                runtime = {'stack': stack, 'cached_files_sha256': cached_weights(config['runtime']['cache']),
-                           'upstream_model': args.model, 'source_code_sha256': profile['source_code_sha256']}
-                atomic_json(runtime_path, runtime)
+            if record['state_id'] in tracker.blocked:
+                continue
             commit_generated(config, frozen, profile_id, job, generated, runtime)
+            tracker.successful(record)
+            tracker.flush()
             print(f"真实写实化 [{number}/{len(jobs)}] {record['split']}/{record['scene_id']}/{record['state_id']}：{len(generated)} 张已提交", flush=True)
             # Only cleanup files owned by this request, after complete commit.
             for view in job['views']:
@@ -110,7 +132,10 @@ def main(request_path):
             with log_path.open('a') as stream:
                 stream.write(json.dumps({'state_id': record['state_id'], 'error': str(error),
                                          'traceback': traceback.format_exc()}, ensure_ascii=False) + '\n')
+                stream.flush()
+                os.fsync(stream.fileno())
             raise
+    return tracker.flush(full=True)
 
 
 if __name__ == '__main__':

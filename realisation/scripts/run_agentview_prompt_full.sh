@@ -31,4 +31,6 @@ export PYTHONDONTWRITEBYTECODE=1
 export PYTHONUNBUFFERED=1
 export MPLBACKEND=Agg
 export MPLCONFIGDIR=/root/robot-realism/cosmos25/cache/matplotlib
-exec "$runtime_python" -u -B -m robot_realism prompt-suite "$@"
+exec "$runtime_python" -u -B -m robot_realism prompt-suite \
+    --root "$experiment_root" \
+    --template "$project_dir/configs/realism/cosmos25_libero_agentview_prompt_v2.yaml" "$@"
