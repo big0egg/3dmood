@@ -44,7 +44,7 @@
 | 系统 / Python | Ubuntu 24.04，Python 3.12 |
 | PPU SDK / CUDA 兼容版本 | SDK 2.1，CUDA 13.0 |
 | PyTorch / torchvision | PPU 源中的 2.9.0 / 0.24.0 |
-| Triton | PPU 源中的 `3.5.0+gitcc5446cf` |
+| Triton | PPU 源中的 `3.5.0` |
 | Vis4D | 1.0.0 |
 | 加速卡 | 当前实例可访问 1 张卡 |
 
@@ -105,7 +105,7 @@ export MOOD_CONSTRAINTS="$VIRTUAL_ENV/3d-mood-constraints.txt"
 cat > "$MOOD_CONSTRAINTS" <<'EOF'
 torch==2.9.0
 torchvision==0.24.0
-triton==3.5.0+gitcc5446cf
+triton==3.5.0
 vis4d==1.0.0
 numpy==1.26.4
 pydantic==1.10.26
@@ -155,6 +155,8 @@ python -m pip install --index-url "$MOOD_PPU_INDEX" \
 ```
 
 上面的约束统一固定 Vis4D、日志库和网络依赖的版本；项目 `requirements.txt` 保持原样。版本依据为当前可运行环境及已核对的 [Vis4D](https://pypi.org/pypi/vis4d/1.0.0/json)、[TensorBoardX](https://pypi.org/pypi/tensorboardX/2.6.4/json)、[wandb](https://pypi.org/pypi/wandb/0.26.1/json) 和 [chardet](https://pypi.org/pypi/chardet/5.2.0/json) 发布元数据。这组约束用于本节的独立环境。
+
+Triton 固定为当前 PPU 源在此环境中列出的 `3.5.0`，满足 PyTorch 2.9.0 的 `triton==3.5.0` 依赖。该源的版本查询未列出 `3.5.0+gitcc5446cf`，因此新环境不再锁定这个带 Git 后缀的构建，以避免依赖解析失败。安装后仍需通过上面的设备检查验证 PPU 可用性。
 
 ### 3. 编译算子并安装项目
 
