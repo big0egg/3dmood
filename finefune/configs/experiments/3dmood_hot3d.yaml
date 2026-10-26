@@ -1,0 +1,12 @@
+schema_version: finefune.experiment.v1
+model: 3dmood
+model_config: ../models/3dmood.yaml
+dataset_config: ../datasets/hot3d.yaml
+train_config: ../training/geometry_head.yaml
+output_dir: /root/finefune-runs/3dmood-hot3d-exp01
+device: cuda:0
+wandb:
+  enabled: true
+  project: finefune
+  mode: online
+  fallback_offline: true

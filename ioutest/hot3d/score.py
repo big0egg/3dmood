@@ -2,11 +2,15 @@
 
 from pathlib import Path
 
-from ..benchmark_report import write_csv
+from ..report_io import write_csv
 from ..common import digest,file_digest,read_json,write_json
-from ..suite_report import inference_speed
+from ..timing import inference_speed
 from .common import implementation,read_record,record_path,validate_box
 from .metrics import conditional,evaluate,label,thresholds
+from ..experiment_config import DEFAULT_METRICS
+from ..geometry_metrics import diagnostics
+from ..timing import summarize
+from ..report_io import write_dict_csv
 
 
 def score(config,root,track,key,frames,gt,protocol):
@@ -25,7 +29,9 @@ def score(config,root,track,key,frames,gt,protocol):
         metrics=config['metrics'],score_floor=config['display_score'],
         code=implementation(['score.py','metrics.py','common.py']),
         interpolation_sha256=file_digest(Path(__file__).parents[1]/'metrics.py'),
-        geometry_sha256=file_digest(Path(__file__).parents[1]/'geometry.py'))
+        geometry_sha256=file_digest(Path(__file__).parents[1]/'geometry.py'),
+        diagnostic_sha256=file_digest(Path(__file__).parents[1]/'geometry_metrics.py'),
+        timing_sha256=file_digest(Path(__file__).parents[1]/'timing.py'))
     output=directory/'metrics'/(key+'.json')
     if output.exists() and read_json(output).get('identity')==identity and read_json(output).get('complete'):
         return read_json(output)
@@ -55,6 +61,10 @@ def score(config,root,track,key,frames,gt,protocol):
         predictions=sum(len(p) for p in predictions.values()),failures=sum(i['status']!='ok' for r in records.values() for i in r['items']),
         conditional=conditional_result,geometry=geometry,semantic=semantic,workpoint=workpoint,timing=timing)
     result['speed']=inference_speed(result)
+    diagnostic_data=dict(classes=classes,gt=gt,symmetries={},frames=[dict(f,group_id=f.get('group_id',f.get('sequence_id',f.get('clip_id',f['frame_id'])))) for f in frames])
+    result['diagnostics'],geometry_rows=diagnostics(diagnostic_data,records,track,dict(DEFAULT_METRICS,**config['metrics']))
+    result['latency']=summarize(records.values())
+    write_dict_csv(directory/'metrics'/(key+'_geometry_targets.csv'),geometry_rows)
     write_json(output,result)
     if semantic:
         names=list(semantic['summary'])

@@ -1,0 +1,4 @@
+-r requirements-data.txt
+pytest>=8,<10
+h5py>=3.10,<4
+# Use an existing PPU torch environment for native/model/recovery tests.

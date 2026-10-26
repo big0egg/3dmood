@@ -1,0 +1,10 @@
+schema_version: finefune.dataset.v1
+id: hot3d_18k
+format: hot3d_prepared
+root: /root/hot3d-finetune-v1/data/hot3d-aria-18k-v1
+protocol: protocol.json
+train:
+  manifest: train.jsonl
+eval:
+  manifest: eval.jsonl
+group_by: participant_id

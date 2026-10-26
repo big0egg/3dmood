@@ -391,23 +391,17 @@ python -m vis4d.data.io.to_hdf5 -p hypersim_depth # 仅自行生成深度时需�
 
 本文统一使用配置默认的 HDF5 数据后端。
 
-## ARKitScenes 多场景切帧评测
+## 三维框统一评测
 
-本实例已有原始数据：`/mnt/data/openBenchmark/ARKitScenes`，包含 4,498 个训练扫描和 549 个验证扫描的官方 3DOD ZIP。验证集对应 183 个不同 `visit_id`，具有场景级三维框、RGB、深度、逐帧内参及相机轨迹。
-
-针对“三维 IoU AP、三维中心距离 AP”的需求，独立模块 [`ioutest`](ioutest/README.md) 已接入 **3D-MOOD、WildDet3D、CuTR RGB、CuTR RGB-D**，同一实例通过三套已有虚拟环境顺序推理，无需切换镜像。549 个验证扫描、183 个 visit、10,980 帧的冻结清单、GT、本地 RGB 与同帧 ARKit 深度已经就绪。模块提供类别无关几何 AP、两模型 17 类语义 AP、RGB-D 独立对照、断点续跑与中文报告；图片、深度和运行缓存均被 Git 忽略。当前工具进程无法访问 PPU，正式 AP 尚未执行。
-
-在 DSW 原生 Terminal 中直接启动 200 帧试评测，再接续 10,980 帧全量：
+[`ioutest`](ioutest/README.md) 只读取已处理测试集，统一选择模型、权重版本和输入条件，输出 AP、几何误差、检出／漏检和延迟。
 
 ```bash
 cd /mnt/workspace/3dmood
-/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python -B -m ioutest benchmark \
-  --report-root "$HOME/report/arkitscenes-three-models-v1"
+/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python -B -m ioutest \
+  --config ioutest/configs/robot_boxing_v1.json --stage check
 ```
 
-报告分别位于 `~/report/arkitscenes-three-models-v1/pilot/report.md` 和 `full/report.md`。添加 `--phase pilot` 可仅做试评测；随后以同一目录执行 `--phase full`，或者中断后重复原命令，都会复用完成帧。指标、模型输入和可选重力实验见 [模块使用说明](ioutest/README.md)，采样与 GT 协议见 [评测协议](ioutest/PLAN.md)。
-
-该流程使用原始 3DOD 数据和自定义单帧评测协议。下面的现有 Omni3D 评测命令需要整理后的 Omni3D 数据，不能直接将原始 ZIP 根目录代入运行。
+配置测试集、模型和权重的实际路径后，将 `--stage check` 改为 `--stage all` 执行。参数和输出结构见 [评测说明](ioutest/README.md)。微调由 `finefune` 负责。
 
 ## 数据集评测与训练
 

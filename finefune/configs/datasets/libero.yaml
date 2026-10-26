@@ -1,0 +1,14 @@
+schema_version: finefune.dataset.v1
+id: libero_original
+format: robot_synth_prepared
+root: /root/opendatasets/LIBERO_GT_v1
+categories_file: categories.json
+camera: agentview
+target_kinds:
+- object
+minimum_visible_pixels: 32
+train:
+  manifest: manifest.json
+eval:
+  manifest: manifest.json
+group_by: scene_id

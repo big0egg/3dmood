@@ -1,0 +1,192 @@
+{
+  "schema_version": "ioutest.experiment.v1",
+  "output": {
+    "root": "/root/robot-boxing-eval-v1"
+  },
+  "selection": {
+    "models": [
+      "3dmood",
+      "wilddet3d"
+    ],
+    "variants": [
+      "official"
+    ],
+    "datasets": [
+      "hot3d_eval"
+    ],
+    "tracks": [
+      "text"
+    ]
+  },
+  "execution": {
+    "device": "cuda",
+    "seed": 20261026,
+    "threads": 4
+  },
+  "timing": {
+    "warmup_frames": 1
+  },
+  "metrics": {
+    "iou_thresholds": [
+      0.25,
+      0.5
+    ],
+    "center_thresholds": [
+      0.02,
+      0.05,
+      0.1,
+      0.25,
+      0.5,
+      1.0
+    ],
+    "association_iou": 0.5,
+    "score_floor": 0.0
+  },
+  "datasets": {
+    "hot3d_eval": {
+      "format": "hot3d_prepared",
+      "root": "/root/hot3d-finetune-v1/data/hot3d-aria-18k-v1",
+      "manifest": "eval.jsonl",
+      "protocol": "protocol.json"
+    },
+    "libero_original_eval": {
+      "format": "robot_synth_prepared",
+      "root": "/root/opendatasets/LIBERO_GT_v1",
+      "manifest": "manifest.json",
+      "categories_file": "categories.json",
+      "eval_split": "eval",
+      "camera": "agentview",
+      "target_kinds": [
+        "object"
+      ],
+      "minimum_visible_pixels": 32
+    },
+    "libero_realistic_eval": {
+      "format": "robot_realism_prepared",
+      "root": "/root/robot-realism/agentview_prompt_v3",
+      "manifest": "manifests/eval_general.jsonl",
+      "categories_file": "/root/opendatasets/LIBERO_GT_v1/categories.json",
+      "eval_split": "eval",
+      "camera": "agentview",
+      "target_kinds": [
+        "object"
+      ],
+      "minimum_visible_pixels": 32
+    },
+    "arkit_eval": {
+      "format": "arkit_prepared",
+      "root": "/mnt/workspace/3dmood/ioutest/runs/arkit-validation-v1",
+      "manifest": "frames.jsonl",
+      "protocol": "protocol.json",
+      "image_cache": "/mnt/workspace/3dmood/ioutest/cache/arkit-validation-v1"
+    }
+  },
+  "models": {
+    "3dmood": {
+      "family": "3dmood",
+      "python": "/mnt/workspace/venvs/3d-mood-ppu-clean/bin/python",
+      "options": {
+        "project_root": "/mnt/workspace/3dmood",
+        "checkpoint": "/mnt/workspace/.cache/3d-mood/torch/hub/checkpoints/gdino3d_swin-b_120e_omni3d_834c97.pt",
+        "max_detections": 300,
+        "score_threshold": 0.0
+      },
+      "variants": {
+        "official": {}
+      },
+      "environment": {
+        "HF_HOME": "/mnt/workspace/.cache/3d-mood/huggingface"
+      }
+    },
+    "wilddet3d": {
+      "family": "wilddet3d",
+      "python": "/mnt/workspace/venvs/wilddet3d-ppu/bin/python",
+      "options": {
+        "project_root": "/mnt/workspace/wilddet3d",
+        "checkpoint": "/root/wilddet3d-weights/wilddet3d_alldata_all_prompt_v1.0.pt",
+        "lingbot_checkpoint": "/root/wilddet3d-weights/model.pt",
+        "max_detections": 300
+      },
+      "variants": {
+        "official": {}
+      }
+    },
+    "unipose9d": {
+      "family": "unipose9d",
+      "python": "/mnt/workspace/venvs/unipose9d-ppu-clean/bin/python",
+      "options": {
+        "project_root": "/mnt/workspace/unipose9d",
+        "checkpoint": "/root/model-assets/model-assets/unipose9d/last.ckpt",
+        "config": "/mnt/workspace/unipose9d/checkpoints/config.yaml",
+        "depth_model": false,
+        "num_points": 1024,
+        "num_tuples": 1000,
+        "num_steps": 32,
+        "num_repeats": 10,
+        "ransac_hops": 2,
+        "ransac_iterations": 1000,
+        "scale_clustering": true
+      },
+      "variants": {
+        "official": {}
+      }
+    },
+    "cutr-rgb": {
+      "family": "cutr",
+      "python": "/mnt/workspace/venvs/ca1m-ppu/bin/python",
+      "options": {
+        "project_root": "/mnt/workspace/CA1M",
+        "checkpoint": "/mnt/workspace/CA1M/models/cutr_rgb.pth",
+        "depth_model": false,
+        "use_gravity": false
+      },
+      "variants": {
+        "official": {}
+      }
+    },
+    "cutr-rgbd": {
+      "family": "cutr",
+      "python": "/mnt/workspace/venvs/ca1m-ppu/bin/python",
+      "options": {
+        "project_root": "/mnt/workspace/CA1M",
+        "checkpoint": "/mnt/workspace/CA1M/models/cutr_rgbd.pth",
+        "depth_model": true,
+        "use_gravity": false
+      },
+      "variants": {
+        "official": {}
+      }
+    },
+    "unipose9d-rgbd": {
+      "family": "unipose9d",
+      "python": "/mnt/workspace/venvs/unipose9d-ppu-clean/bin/python",
+      "options": {
+        "project_root": "/mnt/workspace/unipose9d",
+        "checkpoint": "/mnt/workspace/model-assets/unipose9d/last.ckpt",
+        "config": "/mnt/workspace/unipose9d/checkpoints/config.yaml",
+        "depth_model": true,
+        "num_points": 1024,
+        "num_tuples": 1000,
+        "num_steps": 32,
+        "num_repeats": 10,
+        "ransac_hops": 2,
+        "ransac_iterations": 1000,
+        "scale_clustering": true
+      },
+      "variants": {
+        "official": {}
+      }
+    }
+  },
+  "frontend": {
+    "python": "/mnt/workspace/venvs/unipose9d-frontend-ppu/bin/python",
+    "project_root": "/mnt/workspace/unipose9d",
+    "sam2_checkpoint": "/root/model-assets/model-assets/unipose9d/sam2/sam2.1_hiera_large.pt",
+    "sam2_config": "configs/sam2.1/sam2.1_hiera_l.yaml",
+    "grounding_model": "/root/model-assets/model-assets/unipose9d/grounding-dino-tiny",
+    "box_threshold": 0.4,
+    "text_threshold": 0.3,
+    "max_detections": 300,
+    "moge_checkpoint": "/root/model-assets/model-assets/unipose9d/moge2/model.pt"
+  }
+}

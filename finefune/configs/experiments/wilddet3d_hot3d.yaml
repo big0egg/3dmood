@@ -1,0 +1,12 @@
+schema_version: finefune.experiment.v1
+model: wilddet3d
+model_config: ../models/wilddet3d.yaml
+dataset_config: ../datasets/hot3d.yaml
+train_config: ../training/geometry_head.yaml
+output_dir: /root/finefune-runs/wilddet3d-hot3d-exp01
+device: cuda:0
+wandb:
+  enabled: true
+  project: finefune
+  mode: online
+  fallback_offline: true

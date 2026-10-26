@@ -1,0 +1,5 @@
+# Prepared-data inspection only. Install native torch in each model's PPU env.
+numpy==1.26.4
+scipy>=1.13,<2
+Pillow>=10,<13
+PyYAML>=6,<7

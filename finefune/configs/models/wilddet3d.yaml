@@ -1,0 +1,8 @@
+schema_version: finefune.model.v1
+family: wilddet3d
+python: /mnt/workspace/venvs/wilddet3d-ppu/bin/python
+options:
+  project_root: /mnt/workspace/wilddet3d
+  checkpoint: /root/wilddet3d-weights/wilddet3d_alldata_all_prompt_v1.0.pt
+  lingbot_checkpoint: /root/wilddet3d-weights/model.pt
+  max_detections: 300

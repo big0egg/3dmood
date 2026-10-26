@@ -75,5 +75,5 @@ class UniPoseAdapter:
 
     def close(self):
         self.model = None
-        if self.device.type == "cuda":
+        if hasattr(self, 'device') and self.device.type == "cuda":
             self.torch.cuda.empty_cache()

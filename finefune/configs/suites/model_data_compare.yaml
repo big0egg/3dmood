@@ -1,0 +1,30 @@
+schema_version: finefune.suite.v1
+output_dir: /root/finefune-runs/model-data-compare-v1
+models:
+  3dmood: ../models/3dmood.yaml
+  wilddet3d: ../models/wilddet3d.yaml
+datasets:
+  hot3d: ../datasets/hot3d.yaml
+  libero: ../datasets/libero_matched.yaml
+  cosmos_generic: ../datasets/cosmos_generic.yaml
+  cosmos_mixed: ../datasets/cosmos_mixed.yaml
+train_config: ../training/geometry_head.yaml
+device: cuda:0
+seed: 20261020
+wandb:
+  enabled: true
+  project: finefune
+  mode: online
+  fallback_offline: true
+evaluation:
+  config: /mnt/workspace/3dmood/ioutest/configs/robot_boxing_v1.json
+  datasets:
+  - hot3d_eval
+  - libero_original_eval
+  - libero_realistic_eval
+  tracks:
+    3dmood:
+    - text
+    wilddet3d:
+    - text
+    - gt-box

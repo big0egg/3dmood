@@ -9,19 +9,79 @@ bash /mnt/workspace/3dmood/realisation/scripts/run_agentview_prompt_full_v3.sh -
 该入口自动准备两份运行配置，处理主数据 5,500 张和同帧对照 200 张，明确的内容拦截记录后继续。
 所有产物位于 `/root/robot-realism/agentview_prompt_v3/`，旧 75 张不导入。
 状态、拦截清单和校验方式见 [README 的 v3 说明](README.md)。
-下文六步是原双视角流程；当前 v3 采用上面的全量入口。
 
-先按 [README.md](README.md) 完成环境安装和权重准备，再按本文的 6 步顺序运行。每一步看到“完成标志”后，再进行下一步。
+先按 [README.md](README.md) 完成环境安装和权重准备，再使用上面的 v3 全量入口。下面先说明当前 v3 的产物和输入目录；后面的六步保留为历史双视角流程参考。
 
-## 输入需要提供什么
+## 当前 v3 的产物目录结构
 
-默认输入是 robot-synth 采集完成的 GT 数据集目录：
+`/root/robot-realism/agentview_prompt_v3/` 是整个实验的根目录。实际生成的图片和继承标注位于其 `datasets/` 子目录下。
 
 ```text
-/root/opendatasets/LIBERO_GT_v1_plane_fix
+/root/robot-realism/agentview_prompt_v3/
+├── experiment.json                    固定的实验配置与来源身份
+├── configs/
+│   ├── main.yaml                      主数据实际运行配置
+│   └── paired_general.yaml            同帧通用提示词对照配置
+├── datasets/
+│   ├── main/
+│   │   ├── dataset_info.json
+│   │   ├── manifest.json              生成结果、成功和拦截清单
+│   │   ├── categories.json
+│   │   ├── sampling_plan.json
+│   │   ├── scene_split.json
+│   │   ├── runtime_identity.json
+│   │   ├── provenance/                继承的场景 XML 来源文件
+│   │   ├── train/
+│   │   │   └── 场景/状态/
+│   │   │       ├── state.npy
+│   │   │       ├── COMMIT.json         成功提交记录与文件校验值
+│   │   │       ├── PENDING.json        写入归属记录，提交后也可能保留
+│   │   │       └── agentview/
+│   │   │           ├── rgb.png         Cosmos 生成的彩色图片
+│   │   │           ├── depth.npz       继承的仿真深度
+│   │   │           ├── instance.png    继承的实例分割
+│   │   │           ├── annotation.json 继承的相机和 3D 标注
+│   │   │           └── render_meta.json 生成参数、提示词与模型来源
+│   │   └── eval/                      样本结构与 train 相同
+│   └── paired_general/                同帧对照数据，元数据结构同 main
+│       └── train/场景/状态/agentview/  仅训练对照，没有 eval 目录
+├── manifests/                         各提示词组及训练、评测样本清单
+├── prompts/                           通用、负面及逐帧提示词
+├── previews/
+│   ├── source/                        源图预览
+│   ├── paired/                        同帧两种提示词的对照图
+│   └── eval/                          评测生成结果预览
+├── reports/                           汇总报告、拦截清单和人工审核表
+├── runs/                              启动日志、进度与模型详细日志
+│   ├── main/
+│   └── paired_general/
+└── scratch/                           两组任务的临时控制图及辅助文件
 ```
 
-当前目录记录了 5,500 个状态，每个状态有外部相机 `agentview` 和腕部相机 `robot0_eye_in_hand` 两张图片，共 11,000 张。
+v3 仅生成外部相机 `agentview`。主数据计划为 5,000 张训练图和 500 张评测图，训练图包含 4,800 张通用提示词图和 200 张逐帧提示词图；`paired_general/` 为这 200 个训练状态另生成通用提示词对照。因此实验合计计划处理 5,700 张图片。
+
+| 要查看的内容 | 相对于实验根目录的位置 |
+|---|---|
+| 主训练图片 | `datasets/main/train/场景/状态/agentview/rgb.png` |
+| 主评测图片 | `datasets/main/eval/场景/状态/agentview/rgb.png` |
+| 同帧通用提示词对照 | `datasets/paired_general/train/场景/状态/agentview/rgb.png` |
+| 各组实际可用样本 | `manifests/train_general.jsonl`、`train_specific.jsonl`、`eval_general.jsonl`、`paired_general.jsonl` |
+| 使用共同可用状态的两套训练清单 | `manifests/train_mixed.jsonl`、`train_all_general.jsonl` |
+| 缺少任一版本的对照状态 | `manifests/paired_missing.jsonl` |
+| 生成数量与运行状态 | `reports/summary.json`、`runs/suite_status.json` |
+| 拦截记录及对照报告 | `reports/blocked.csv`、`reports/blocked.jsonl`、`reports/comparison.md` |
+
+实际成功图片数以清单和汇总报告为准。内容检查拦截项单独记录，不提交占位图片；存在 `PENDING.json` 也不能单独证明样本成功，应以有效的 `COMMIT.json` 和生成清单为准。生成图沿用仿真标注，图像与 GT 的视觉对齐仍需审核。
+
+## 当前 v3 的输入 GT 数据结构
+
+当前 v3 实际运行配置中的输入是 robot-synth 采集完成的 GT 数据集：
+
+```text
+/root/opendatasets/LIBERO_GT_v1
+```
+
+该输入目录记录了 5,500 个状态，每个状态有外部相机 `agentview` 和腕部相机 `robot0_eye_in_hand` 两张图片，共 11,000 张。v3 从中读取 `agentview`；腕部相机图片仍保留在输入数据中。
 
 | 输入内容 | 文件位置 | 用途 |
 |---|---|---|
@@ -35,10 +95,10 @@ bash /mnt/workspace/3dmood/realisation/scripts/run_agentview_prompt_full_v3.sh -
 
 默认深度控制流程会把 `depth.npz` 自动转换成模型需要的控制图。分割、3D 标注和仿真状态用于本工具的数据校验、保存和检查，不作为默认生成模型的控制信号。
 
-目录结构如下：
+输入 GT 数据的主要目录结构如下，完整目录还包含类别、采样计划等元数据：
 
 ```text
-LIBERO_GT_v1_plane_fix/
+LIBERO_GT_v1/
 ├── dataset_info.json
 ├── manifest.json
 ├── provenance/                         场景 XML 来源文件
@@ -55,7 +115,11 @@ LIBERO_GT_v1_plane_fix/
 └── eval/                               与 train 相同
 ```
 
-**你现有的 GT 目录已经是本工具的输入格式，保持原目录即可。** 当前入口按这份完整数据集读取；原始 LIBERO HDF5 或单独的图片文件夹不能直接替代它。
+**该 GT 目录作为输入保持原样，生成结果写入前述实验目录的 `datasets/`。** 原始 LIBERO HDF5 或单独的图片文件夹不能直接替代完整 GT 数据集。
+
+## 历史双视角流程参考
+
+以下第 1～6 步及参数说明保留原 `cosmos25_libero_v1.yaml` 的双视角流程和旧路径示例，包括 `LIBERO_GT_v1_plane_fix`。这些路径与当前 v3 运行配置不同；当前 v3 使用本文开头的全量入口，实际配置见 `/root/robot-realism/agentview_prompt_v3/configs/`。
 
 ## 第 1 步：进入工程并激活环境
 

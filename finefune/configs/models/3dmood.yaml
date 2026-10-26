@@ -1,0 +1,9 @@
+schema_version: finefune.model.v1
+family: 3dmood
+python: /mnt/workspace/venvs/3d-mood-ppu-clean/bin/python
+environment:
+  HF_HOME: /mnt/workspace/.cache/3d-mood/huggingface
+options:
+  project_root: /mnt/workspace/3dmood
+  checkpoint: /mnt/workspace/.cache/3d-mood/torch/hub/checkpoints/gdino3d_swin-b_120e_omni3d_834c97.pt
+  max_detections: 300

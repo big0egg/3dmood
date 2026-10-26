@@ -1,0 +1,14 @@
+schema_version: finefune.dataset.v1
+id: cosmos_generic
+format: robot_realism_prepared
+root: /root/robot-realism/agentview_prompt_v3
+categories_file: /root/opendatasets/LIBERO_GT_v1/categories.json
+camera: agentview
+target_kinds:
+- object
+minimum_visible_pixels: 32
+train:
+  manifest: manifests/train_all_general.jsonl
+eval:
+  manifest: manifests/eval_general.jsonl
+group_by: scene_id

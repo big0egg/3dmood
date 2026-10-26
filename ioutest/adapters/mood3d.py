@@ -19,6 +19,8 @@ class Mood3DAdapter:
         self.model = None
 
     def load(self):
+        from ..model_environment import apply_environment
+        apply_environment(self.options.get('environment', {}))
         # Set offline mode before importing transformers through the model.
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["TRANSFORMERS_OFFLINE"] = "1"

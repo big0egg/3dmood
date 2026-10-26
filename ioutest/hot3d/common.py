@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from ..common import digest,file_digest,read_json,write_json
-from ..image_cache import _write_bytes
+from ..storage import _write_bytes
 from ..schema import validate_box as validate_geometry
 
 SCHEMA='hot3d.box3d.v1'
