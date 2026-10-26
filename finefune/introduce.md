@@ -34,7 +34,7 @@ EXP=/root/finefune-runs/3dmood-hot3d-exp01
 "$PY" -B "$FT/run.py" train --config "$CFG" --output-dir "$EXP"
 ```
 
-**这一条 `train` 命令就能完成一次微调，无需另跑 `prepare`、`verify` 或 `suite`。** 默认训练 4 轮，单张前向、累积 8 张，只更新三维几何头。
+**这一条 `train` 命令就能完成一次微调，无需另跑 `prepare`、`verify` 或 `suite`。** HOT3D 默认训练 4 轮，LIBERO/Cosmos 默认 12 轮，单张前向、累积 8 张，只更新三维几何头。
 
 训练 WildDet3D 时，将 `CFG` 改为 `$FT/configs/experiments/wilddet3d_hot3d.yaml`，`EXP` 改为 `/root/finefune-runs/wilddet3d-hot3d-exp01`，再执行同一条训练命令。每次实验从所选模型配置中的完整基础权重初始化。
 
@@ -56,17 +56,19 @@ EXP=/root/finefune-runs/3dmood-cosmos-generic-exp01
 | `--config` | 实验模板 `3dmood_hot3d.yaml`、`wilddet3d_hot3d.yaml`；续训和评测用保存的 `resolved_config.yaml` |
 | `--dataset-config` | `configs/datasets/` 下的数据配置，见下表；不填则使用实验模板中的数据 |
 | `--output-dir` | 独立实验目录，例如 `/root/finefune-runs/3dmood-cosmos-generic-exp01` |
-| `--epochs` | 正整数，默认 `4` |
+| `--epochs` | 正整数；覆盖数据配置中的 `training_epochs`：HOT3D 默认 `4`，LIBERO/Cosmos 默认 `12` |
 | `--lr` | 正学习率，默认 `0.0001` |
 | `--grad-accum-steps` | 正整数，默认 `8` |
 
-| 数据配置 | 用途 |
-|---|---|
-| `hot3d.yaml` | 已准备的 HOT3D：15,000 训练 / 3,000 评测 |
-| `libero.yaml` | 完整 LIBERO agentview 划分 |
-| `libero_matched.yaml` | 与 Cosmos 共用训练状态的 LIBERO 原图，用于公平对照 |
-| `cosmos_generic.yaml` | 全通用：训练 `train_all_general`，评测 `eval_general` |
-| `cosmos_mixed.yaml` | 混合：训练 `train_mixed`，评测 `eval_general` |
+| 数据配置 | 用途 | 默认轮数 |
+|---|---|---:|
+| `hot3d.yaml` | 已准备的 HOT3D：15,000 训练 / 3,000 评测 | 4 |
+| `libero.yaml` | 完整 LIBERO agentview 划分 | 12 |
+| `libero_matched.yaml` | 与 Cosmos 共用训练状态的 LIBERO 原图，用于公平对照 | 12 |
+| `cosmos_generic.yaml` | 全通用：训练 `train_all_general`，评测 `eval_general` | 12 |
+| `cosmos_mixed.yaml` | 混合：训练 `train_mixed`，评测 `eval_general` | 12 |
+
+轮数由数据配置的 `training_epochs` 自动选择，单次训练和 `suite` 均生效，`--epochs` 可手动覆盖。4,910 帧的数据按 12 轮处理，累计训练图片 58,920 次，约为 HOT3D 的 60,000 次。已保存的实验仍使用快照轮数；正在运行的任务不会因修改配置而改变。切换到新轮数时使用新实验目录。
 
 更换模型、数据、训练配方或基础权重时使用新输出目录。数据应已由原制作模块准备好；本模块只建立索引和规范化 GT，不重新抽帧或生成图片。现成 HOT3D 输入 `/root/hot3d-finetune-v1/data/hot3d-aria-18k-v1` 继续使用。
 
@@ -116,7 +118,7 @@ WildDet3D 可用 `--tracks text gt-box`，3D-MOOD 使用 `--tracks text`。改�
   --config "$FT/configs/suites/model_data_compare.yaml"
 ```
 
-默认运行 **两模型 × 四训练数据 = 八组独立微调**。四种数据为 HOT3D、对齐后的 LIBERO 原图、Cosmos 全通用、Cosmos 混合。每组均从对应官方基础权重开始。
+默认运行 **两模型 × 四训练数据 = 八组独立微调**。HOT3D 训练 4 轮，对齐后的 LIBERO 原图、Cosmos 全通用和 Cosmos 混合各训练 12 轮。每组均从对应官方基础权重开始。
 
 程序依次执行：准备索引 → 来源重叠审计 → 两模型官方基线 → 八组训练及各自评测 → 汇总报告。所有组都在配置中的三个独立测试集上评测，PPU 子任务依次运行。
 

@@ -132,6 +132,8 @@ def prepare(cfg, data=None):
                          format="finefune_prepared", root=str(target), protocol="protocol.json",
                          train=dict(manifest="train.jsonl"), eval=dict(manifest="eval.jsonl"),
                          group_by=cfg["dataset"]["group_by"])
+    if "training_epochs" in cfg["dataset"]:
+        prepared_spec["training_epochs"] = cfg["dataset"]["training_epochs"]
     atomic_bytes(Path(cfg["root"]) / "dataset_config.yaml",
                  yaml.safe_dump(prepared_spec, allow_unicode=True, sort_keys=False).encode())
     return protocol, manifests["train"], manifests["eval"]

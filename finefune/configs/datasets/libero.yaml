@@ -1,5 +1,6 @@
 schema_version: finefune.dataset.v1
 id: libero_original
+training_epochs: 12
 format: robot_synth_prepared
 root: /root/opendatasets/LIBERO_GT_v1
 categories_file: categories.json

@@ -96,7 +96,9 @@ configs/
 └── suites/model_data_compare.yaml
 ```
 
-优先级：默认值→模型/数据/训练配置→实验配置覆盖→显式命令行覆盖。显式选择新的 train-config 会覆盖快照中的旧配方，单项命令行参数最后生效。保存的 resolved_config.yaml 自包含，不要求原配方文件仍然存在。
+训练参数优先级：默认值→训练配方→数据配置的 training_epochs（仅轮数）→实验配置的 training 覆盖→显式命令行参数。HOT3D 的 training_epochs 为 4，LIBERO/Cosmos 为 12，单次训练和 suite 均自动选择；未设置该字段的数据使用训练配方轮数。--epochs 始终可手动覆盖。
+
+保存的 resolved_config.yaml 自包含，恢复时保持快照中的轮数，不受新的数据默认值影响。显式选择新的 train-config 会重新加载配方并应用数据轮数默认值，单项命令行参数最后生效。更改已有实验的训练轮数需使用新输出目录。
 
 配置引用的其他配置、模型与输出路径相对于该配置所在目录解析。数据配置中的 manifest、protocol、categories_file、align_to 相对于 dataset.root；绝对路径保持原义。命令行路径相对于当前工作目录。解释器保留 venv 路径，不解析成系统 Python。
 
@@ -118,6 +120,8 @@ seed: 20261020
 ```
 
 解析后的内部字段为 micro_batch/accumulate/clip_grad/checkpoint_updates。有效批量为 micro_batch_size × grad_accum_steps；每轮最后不足一个累积组时按实际组大小归一化。更新次数为 epochs × ceil(实际有效训练图片数 / grad_accum_steps)。预热从 0.1 倍学习率开始，余弦段降至 0.1 倍。
+
+上面的配方以 4 轮作为回退值；当前 LIBERO/Cosmos 数据配置会将轮数改为 12。4,910 帧按 12 轮计算为 58,920 次图片训练量，约等于 HOT3D 15,000 帧 × 4 轮的 60,000 次。
 
 ## 数据接入与划分
 

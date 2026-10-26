@@ -1,5 +1,6 @@
 schema_version: finefune.dataset.v1
 id: cosmos_generic
+training_epochs: 12
 format: robot_realism_prepared
 root: /root/robot-realism/agentview_prompt_v3
 categories_file: /root/opendatasets/LIBERO_GT_v1/categories.json

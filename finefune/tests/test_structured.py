@@ -138,6 +138,49 @@ def test_cli_precedence_and_self_contained_snapshot(configured, tmp_path):
     assert updated["training"]["epochs"] == 7 and updated["training"]["lr"] == .005
 
 
+def test_dataset_epochs_default_overrides_and_frozen_snapshot(configured, tmp_path):
+    _, args, directory = configured
+    path = args["dataset_config"]
+    spec = yaml.safe_load(path.read_text())
+    spec["training_epochs"] = 12
+    path.write_text(yaml.safe_dump(spec))
+    cfg = resolve(args)
+    assert cfg["training"]["epochs"] == 12
+    assert resolve(dict(args, epochs=6))["training"]["epochs"] == 6
+    experiment = directory / "epochs.yaml"
+    experiment.write_text(yaml.safe_dump(dict(schema_version="finefune.experiment.v1",
+        model="3dmood", model_config="model.yaml", dataset_config="dataset.yaml",
+        train_config="recipe.yaml", output_dir="../other", training=dict(epochs=5))))
+    assert resolve(dict(config=experiment))["training"]["epochs"] == 5
+    assert resolve(dict(config=experiment, epochs=7))["training"]["epochs"] == 7
+    # Old experiments keep their recorded epoch count, even with new data defaults.
+    cfg["training"]["epochs"] = 4
+    snapshot = tmp_path / "resolved.yaml"
+    snapshot.write_text(yaml.safe_dump(cfg))
+    assert resolve(dict(config=snapshot)) == cfg
+
+
+@pytest.mark.parametrize("epochs", [0, -1, True, 12.22, "12", None])
+def test_dataset_epochs_must_be_positive_integer(configured, epochs):
+    _, args, _ = configured
+    path = args["dataset_config"]
+    spec = yaml.safe_load(path.read_text())
+    spec["training_epochs"] = epochs
+    path.write_text(yaml.safe_dump(spec))
+    with pytest.raises(ValueError, match="training_epochs"):
+        resolve(args)
+
+
+def test_prepared_indexes_keep_dataset_epoch_default(configured, tmp_path):
+    cfg, args, _ = configured
+    cfg["dataset"]["training_epochs"] = 12
+    prepare(cfg)
+    prepared = Path(cfg["root"]) / "dataset_config.yaml"
+    assert dataset_config(prepared)["training_epochs"] == 12
+    result = resolve(dict(args, dataset_config=prepared, output_dir=tmp_path / "next"))
+    assert result["training"]["epochs"] == 12
+
+
 def test_python_symlink_is_not_resolved_into_base_environment(configured):
     cfg, args, directory = configured
     fake = directory / "venv/bin/python"
@@ -438,6 +481,7 @@ def test_repository_suite_has_eight_independent_training_branches():
     assert len(result['jobs']) == 8 and len(result['baseline_models']) == 2
     assert {j['dataset'] for j in result['jobs']} == {'hot3d','libero','cosmos_generic','cosmos_mixed'}
     for job in result['jobs']:
+        assert job['config']['training']['epochs'] == (4 if job['dataset'] == 'hot3d' else 12)
         m = job['config']['model']
         if job['model'] == 'wilddet3d':
             assert m['options']['checkpoint'].startswith('/root/wilddet3d-weights/')

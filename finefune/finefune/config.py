@@ -70,6 +70,8 @@ def normalize_dataset(d, base, root_override=None):
         raise ValueError("minimum_visible_pixels 必须为非负整数")
     if d.get("target_kinds", ["object"]) != ["object"]:
         raise ValueError("当前训练仅支持 target_kinds: [object]")
+    if "training_epochs" in d and (type(d["training_epochs"]) is not int or d["training_epochs"] < 1):
+        raise ValueError("数据配置 training_epochs 必须为正整数")
     return d
 
 
@@ -154,6 +156,8 @@ def resolve(args):
         tfile = cli.get("train_config") or c.get("train_config", PROJECT / "configs/training/geometry_head.yaml")
         tfile = path_value(tfile, Path.cwd() if cli.get("train_config") else base)
         t, recipe_seed = training_options(document(tfile)[0])
+        # Dataset defaults apply to new recipes; saved experiment epochs stay frozen.
+        t["epochs"] = d.get("training_epochs", t["epochs"])
     overrides = {} if cli.get("train_config") else dict(c.get("training", {}))
     for name in ("epochs", "lr", "grad_accum_steps"):
         if cli.get(name) is not None:
