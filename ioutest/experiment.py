@@ -4,6 +4,7 @@ import fcntl
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from .common import digest, file_digest, read_json, write_json, utc_now
 from .experiment_config import DEFAULT_CONFIG, load_config, select
@@ -127,15 +128,100 @@ sys.exit(0 if ready and not missing else 2)
         except (OSError, subprocess.TimeoutExpired) as exc: checks.append(dict(python=python, ready=False, detail=str(exc)))
     return dict(ready=all(r['ready'] for r in checks), environments=checks)
 
+def _duration(seconds):
+    if seconds is None:
+        return '—'
+    minutes, seconds = divmod(max(0, int(seconds)), 60)
+    hours, minutes = divmod(minutes, 60)
+    return f'{hours:02d}:{minutes:02d}:{seconds:02d}'
+
+
+class _WorkerProgress:
+    """Read existing worker progress without changing prediction identities."""
+    def __init__(self, root, mode):
+        self.path = Path(root) / 'progress.json'
+        self.mode = '推理' if mode == 'infer' else '延迟测量'
+        self.started = time.monotonic()
+        self.last_print = self.started - 5
+        self.stamp = self._stamp()
+        self.current = None
+        self.first_active = None
+        self.tty = sys.stdout.isatty()
+
+    def _stamp(self):
+        try:
+            stat = self.path.stat()
+            return stat.st_ino, stat.st_mtime_ns, stat.st_size
+        except OSError:
+            return None
+
+    def show(self, force=False):
+        now = time.monotonic()
+        stamp = self._stamp()
+        if stamp is not None and stamp != self.stamp:
+            try:
+                value = read_json(self.path)
+                completed, total, reused = (int(value[k]) for k in ('completed', 'total', 'reused'))
+                if 0 <= reused <= completed <= total and total > 0:
+                    self.current = completed, total, reused
+                    active = completed - reused
+                    if active and self.first_active is None:
+                        self.first_active = now, active
+                    self.stamp = stamp
+            except (OSError, ValueError, KeyError, TypeError):
+                pass  # Progress display must not interrupt the model worker.
+        if not force and now - self.last_print < (0.5 if self.tty else 5):
+            return
+        elapsed = _duration(now - self.started)
+        if self.current is None:
+            message = f'{self.mode}：加载模型／预热，已用时 {elapsed}'
+            if force:
+                message = f'{self.mode}：子进程已结束，尚无本次帧进度；请查看 worker.log，已用时 {elapsed}'
+        else:
+            completed, total, reused = self.current
+            eta = 0 if completed == total else None
+            if eta is None and self.first_active is not None:
+                tick, active = self.first_active
+                count = completed - reused - active
+                if count > 0 and now > tick:
+                    eta = (total - completed) * (now - tick) / count
+            filled = int(20 * completed / total)
+            bar = '#' * filled + '-' * (20 - filled)
+            message = (f'{self.mode} [{bar}] {completed}/{total} 帧 {100*completed/total:.1f}%'
+                       f' | 复用 {reused} | 已用时 {elapsed} | 预计剩余 {_duration(eta)}')
+        print(('\r' if self.tty else '') + message + ('\033[K' if self.tty else ''),
+              end='' if self.tty and not force else '\n', flush=True)
+        self.last_print = now
+
+
 def run_worker(task, mode):
     root = Path(task['run_root']); task = dict(task, mode=mode)
     path = root / 'logs' / (mode + '_task.json'); write_json(path, task)
     env = dict(child_environment(os.environ, task.get('environment', {})), PYTHONDONTWRITEBYTECODE='1', PYTHONUNBUFFERED='1', MPLBACKEND='Agg',
                HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', XFORMERS_DISABLED='1')
     project = str(Path(__file__).resolve().parents[1]); env['PYTHONPATH'] = project + os.pathsep + env.get('PYTHONPATH', '')
+    progress = _WorkerProgress(root, mode)
     with (root / 'logs' / 'worker.log').open('a') as log:
-        result = subprocess.run([task['model']['python'], '-B', '-m', 'ioutest.experiment_worker', str(path)], env=env, stdout=log, stderr=subprocess.STDOUT)
-    if result.returncode: raise RuntimeError(f"模型进程失败（{result.returncode}）：{root / 'logs/worker.log'}")
+        with subprocess.Popen([task['model']['python'], '-B', '-m', 'ioutest.experiment_worker', str(path)],
+                              env=env, stdout=log, stderr=subprocess.STDOUT) as process:
+            try:
+                while True:
+                    code = process.poll()
+                    progress.show(force=code is not None)
+                    if code is not None:
+                        break
+                    time.sleep(0.5)
+            except BaseException:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                if progress.tty:
+                    print(flush=True)
+                raise
+    if code: raise RuntimeError(f"模型进程失败（{code}）：{root / 'logs/worker.log'}")
 
 def execute(c, selections, stage):
     names = list(dict.fromkeys(s['dataset'] for s in selections))
@@ -159,9 +245,12 @@ def execute(c, selections, stage):
             bind(root / 'audits' / (name + '_dataset.json'), dict(dataset_id=d['dataset_id'], classes=d['classes'], metadata=d['metadata']))
         try:
             if stage in ('all', 'infer', 'latency'):
+                print('检查模型环境／设备……', flush=True)
                 ready = check_environments(tasks); write_json(root / 'readiness.json', ready)
                 if not ready['ready']: raise RuntimeError('选中模型的环境／PPU 检查失败，见 readiness.json')
-            for task in tasks:
+            for index, task in enumerate(tasks, 1):
+                print(f"[{index}/{len(tasks)}] 数据集 {task['dataset']} | 模型 {task['model_name']}"
+                      f" | 权重 {task['variant_name']} | 输入 {task['track']}", flush=True)
                 directory = Path(task['run_root'])
                 bind(directory / 'request.json', {k: v for k, v in task.items() if k != 'run_root'})
                 write_json(directory / 'training_audit.json', task['training_audit'])
@@ -170,10 +259,15 @@ def execute(c, selections, stage):
                 elif stage == 'latency': run_worker(task, 'latency')
                 if stage in ('all', 'score', 'latency'):
                     from .experiment_score import score
+                    print('计算指标……', flush=True)
+                    started = time.monotonic()
                     score(task, data[task['dataset']], c['metrics'])
+                    print(f'指标计算完成，用时 {_duration(time.monotonic() - started)}', flush=True)
             if stage in ('all', 'report', 'latency'):
                 from .experiment_report import assemble
+                print('生成报告……', flush=True)
                 result = assemble(root, tasks, data, c['metrics'])
+                print('报告已生成：' + result['report'], flush=True)
             else: result = dict(complete=True, jobs=len(tasks), stage=stage)
             write_json(root / 'status.json', dict(status='complete', stage=stage, updated_utc=utc_now()))
             return result
