@@ -93,10 +93,10 @@ EXP=/root/finefune-runs/3dmood-hot3d-exp01
 
 ```bash
 "$PY" -B "$FT/run.py" evaluate \
-  --config "$EXP/resolved_config.yaml" --variant official --tracks text
+  --config "$EXP/resolved_config.yaml" --variant official --tracks gt-box
 
 "$PY" -B "$FT/run.py" evaluate \
-  --config "$EXP/resolved_config.yaml" --variant finetuned --tracks text
+  --config "$EXP/resolved_config.yaml" --variant finetuned --tracks gt-box
 ```
 
 `official` 加载基础权重，`finetuned` 加载同一基础权重并覆盖本次三维头，因此官方基线也可以在训练结束后补跑。若想提前做官方评测，先执行 `prepare --config "$CFG" --output-dir "$EXP"`（作为 `run.py` 的子命令），建立索引后执行官方评测；有数据覆盖参数时也须传给 `prepare`。

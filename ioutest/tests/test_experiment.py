@@ -96,6 +96,43 @@ def test_selection_is_explicit_and_dependencies_only_selected(prepared):
     with pytest.raises(ValueError,match='未知'):select(c,models=['no'])
 
 
+@pytest.mark.parametrize('sam3_present,device', [(True, 'cpu'), (False, 'cpu'), (True, 'cuda:0')])
+def test_readiness_finds_vendored_sam3_without_shell_paths(tmp_path, monkeypatch, sam3_present, device):
+    import venv
+    from ioutest.experiment import check_environments
+
+    # An isolated interpreter ensures an installed SAM3 cannot hide missing sources.
+    env = tmp_path / 'env'
+    venv.EnvBuilder(with_pip=False).create(env)
+    site = next((env / 'lib').glob('python*/site-packages'))
+    (site / 'torch.py').write_text(
+        "from types import SimpleNamespace\n"
+        "__version__ = 'test'\n"
+        "def device(name):\n"
+        "    kind, _, index = name.partition(':')\n"
+        "    return SimpleNamespace(type=kind, index=int(index) if index else None)\n"
+        "cuda = SimpleNamespace(is_available=lambda: False, device_count=lambda: 0)\n")
+    repo = tmp_path / 'wilddet-project'
+    for module in ['wilddet3d', 'vis4d']:
+        package = repo / module
+        package.mkdir(parents=True)
+        (package / '__init__.py').write_text("raise AssertionError('precheck must not import models')\n")
+    if sam3_present:
+        package = repo / 'third_party/sam3/sam3'
+        package.mkdir(parents=True)
+        (package / '__init__.py').write_text("raise AssertionError('precheck must not import SAM3')\n")
+    monkeypatch.delenv('PYTHONPATH', raising=False)
+    monkeypatch.delenv('PYTHONHOME', raising=False)
+    monkeypatch.chdir(tmp_path)
+    task = dict(model=dict(family='wilddet3d', python=str(env / 'bin/python')),
+                options=dict(project_root=str(repo)), execution=dict(device=device))
+    result = check_environments([task])
+    assert result['ready'] == (sam3_present and device == 'cpu')
+    detail = json.loads(result['environments'][0]['detail'])
+    assert detail['missing_modules'] == ([] if sam3_present else ['sam3'])
+    assert detail['device_ready'] == (device == 'cpu')
+
+
 def test_geometry_errors_and_equivalent_axes():
     target=box();pred=box(center=(.03,.04,2),size=(.22,.4,.3))
     e=geometry_error(pred,target)

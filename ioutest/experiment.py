@@ -101,13 +101,17 @@ def check_environments(tasks):
     for t in tasks:
         family = t['model']['family']; project = Path(t['options']['project_root'])
         source = project / 'infer' if family == 'unipose9d' else project
+        sources = (str(source),)
+        if family == 'wilddet3d':
+            # WildDet3D adds vendored SAM3 on import; find_spec does not import it.
+            sources = (str(project / 'third_party/sam3'), *sources)
         environment = tuple(sorted(t.get('environment', {}).items()))
-        requested.add((t['model']['python'], t['execution']['device'], str(source), tuple(required[family]), environment))
+        requested.add((t['model']['python'], t['execution']['device'], sources, tuple(required[family]), environment))
         if t.get('frontend'):
             source = Path(t['frontend']['project_root']) / 'infer'
-            requested.add((t['frontend']['python'], t['execution']['device'], str(source), ('sam2', 'transformers', 'moge_model'), environment))
+            requested.add((t['frontend']['python'], t['execution']['device'], (str(source),), ('sam2', 'transformers', 'moge_model'), environment))
     program = """import importlib.util,json,sys,torch
-sys.path.insert(0,sys.argv[2])
+sys.path[:0]=json.loads(sys.argv[2])
 missing=[n for n in json.loads(sys.argv[3]) if importlib.util.find_spec(n) is None]
 device=torch.device(sys.argv[1])
 ready=device.type!='cuda' or (torch.cuda.is_available() and (device.index is None or device.index<torch.cuda.device_count()))
@@ -115,9 +119,9 @@ print(json.dumps(dict(torch=torch.__version__,device_ready=ready,missing_modules
 sys.exit(0 if ready and not missing else 2)
 """
     import json
-    for python, device, source, modules, environment in sorted(requested):
+    for python, device, sources, modules, environment in sorted(requested):
         try:
-            p = subprocess.run([python, '-B', '-c', program, device, source, json.dumps(modules)],
+            p = subprocess.run([python, '-B', '-c', program, device, json.dumps(sources), json.dumps(modules)],
                                env=child_environment(os.environ, dict(environment)), capture_output=True, text=True, timeout=120)
             checks.append(dict(python=python, ready=p.returncode == 0, detail=(p.stdout + p.stderr)[-4000:]))
         except (OSError, subprocess.TimeoutExpired) as exc: checks.append(dict(python=python, ready=False, detail=str(exc)))
